@@ -1,237 +1,158 @@
-// Draws the cover: photo panels in a comic layout, a colour grade, a
-// halftone wash, and the caption band with the big title lettering.
-// Everything is drawn with the canvas API; the only typefaces are the
-// system's own stacks, so the app never downloads a font.
+// The cover renderer: three diagonal comic panels, a halftone pass,
+// bold outlined lettering and a sunset or neon colour grade.
+//
+// A panel is { photo, scene, scale, ox, oy }:
+//   photo — an HTMLImageElement, or null
+//   scene — a key of SCENES from samples.js, used when photo is null
+//   scale — zoom factor (1 = cover-fit), ox/oy — pan fractions (-0.5..0.5)
 
-export const DISPLAY_FONT = '"Arial Black", "Noto Sans Display", "Liberation Sans", Arial, sans-serif';
-export const LABEL_FONT = '"Arial Narrow", "Liberation Sans", Arial, sans-serif';
+import { SCENES } from './samples.js';
 
-export const LAYOUTS = ['triptych', 'stack', 'hero', 'zigzag'];
-export const GRADES = ['sunset', 'vice', 'noir', 'gold'];
-export const SIZES = {
-  square: { w: 1080, h: 1080, label: 'Square 1080 × 1080' },
-  portrait: { w: 1080, h: 1350, label: 'Portrait 1080 × 1350' },
-  wide: { w: 1920, h: 1080, label: 'Wide 1920 × 1080' },
+export const GRADES = {
+  gold: {
+    tint: 'rgba(255, 122, 26, 0.14)',
+    sun: '#ffd76a',
+    accent: '#ffb400',
+    paper: '#fff7e8',
+    ink: '#14101c',
+    bar: '#ff5e62',
+  },
+  neon: {
+    tint: 'rgba(34, 230, 255, 0.12)',
+    sun: '#ff2e88',
+    accent: '#22e6ff',
+    paper: '#eef6ff',
+    ink: '#0b0616',
+    bar: '#3b0f66',
+  },
 };
 
-const GRADE_TINTS = {
-  sunset: ['rgba(255, 94, 60, 0.28)', 'rgba(190, 30, 120, 0.34)'],
-  vice: ['rgba(0, 220, 200, 0.2)', 'rgba(255, 46, 136, 0.3)'],
-  noir: ['rgba(20, 20, 30, 0.42)', 'rgba(255, 210, 90, 0.1)'],
-  gold: ['rgba(255, 170, 40, 0.3)', 'rgba(120, 60, 0, 0.28)'],
-};
-
-/** Splits the canvas into panel rects for a layout, each with a slant. */
-function panelRects(layout, w, h) {
-  const artH = h * 0.78;
-  const gutter = Math.max(6, w * 0.008);
-  if (layout === 'stack') {
-    const bh = (artH - gutter * 2) / 3;
-    return [0, 1, 2].map((i) => ({ x: 0, y: i * (bh + gutter), w, h: bh, slant: 0 }));
-  }
-  if (layout === 'hero') {
-    const left = w * 0.62 - gutter / 2;
-    const right = w - left - gutter;
-    const rh = (artH - gutter) / 2;
-    return [
-      { x: 0, y: 0, w: left, h: artH, slant: 0 },
-      { x: left + gutter, y: 0, w: right, h: rh, slant: 0 },
-      { x: left + gutter, y: rh + gutter, w: right, h: rh, slant: 0 },
-    ];
-  }
-  if (layout === 'zigzag') {
-    const bw = (w - gutter * 2) / 3;
-    const lean = w * 0.05;
-    return [0, 1, 2].map((i) => ({
-      x: i * (bw + gutter),
-      y: i === 1 ? h * 0.05 : 0,
-      w: bw,
-      h: artH - (i === 1 ? h * 0.05 : 0),
-      slant: i === 0 ? lean : i === 2 ? -lean : 0,
-    }));
-  }
-  const bw = (w - gutter * 2) / 3;
-  const lean = w * 0.06;
-  return [0, 1, 2].map((i) => ({
-    x: i * (bw + gutter),
-    y: 0,
-    w: bw,
-    h: artH,
-    slant: i === 0 ? lean : i === 2 ? -lean : 0,
-  }));
+/** The three panel polygons for a cover of size w×h. Adjacent panels
+ *  share one boundary edge, so the cover tiles with no gaps: in the
+ *  Zigzag layout the two boundaries lean in opposite directions. */
+export function panelShapes(w, h, layout) {
+  const slant = layout === 'zigzag' ? w * 0.08 : 0;
+  const third = h / 3;
+  return [
+    [[0, 0], [w, 0], [w, third - slant], [0, third + slant]],
+    [[0, third + slant], [w, third - slant], [w, 2 * third + slant], [0, 2 * third - slant]],
+    [[0, 2 * third - slant], [w, 2 * third + slant], [w, h], [0, h]],
+  ];
 }
 
-/** The clip path of one panel: a rectangle sheared by its slant. */
-function tracePanel(ctx, r) {
+function tracePoly(ctx, pts) {
   ctx.beginPath();
-  ctx.moveTo(r.x + r.slant, r.y);
-  ctx.lineTo(r.x + r.w + r.slant, r.y);
-  ctx.lineTo(r.x + r.w - r.slant, r.y + r.h);
-  ctx.lineTo(r.x - r.slant, r.y + r.h);
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
   ctx.closePath();
 }
 
-/** Draws an image or canvas into a rect, cover-fit, with zoom and pan. */
-function drawFitted(ctx, photo, r, zoom, panX, panY) {
-  if (!photo) return;
-  const iw = photo.naturalWidth || photo.width;
-  const ih = photo.naturalHeight || photo.height;
-  if (!iw || !ih) return;
-  const scale = Math.max(r.w / iw, r.h / ih) * zoom;
-  const dw = iw * scale;
-  const dh = ih * scale;
-  const dx = r.x + (r.w - dw) / 2 + panX * r.w * 0.3;
-  const dy = r.y + (r.h - dh) / 2 + panY * r.h * 0.3;
-  ctx.drawImage(photo, dx, dy, dw, dh);
+function drawPhotoCover(ctx, img, x, y, w, h, scale, ox, oy) {
+  const fit = Math.max(w / img.width, h / img.height) * scale;
+  const dw = img.width * fit;
+  const dh = img.height * fit;
+  const dx = x + (w - dw) / 2 + ox * w;
+  const dy = y + (h - dh) / 2 + oy * h;
+  ctx.drawImage(img, dx, dy, dw, dh);
 }
 
-/** A halftone dot field fading across the top corner of the art area. */
-function halftone(ctx, w, h, colour) {
-  const step = Math.max(10, w * 0.014);
-  ctx.fillStyle = colour;
-  for (let y = step / 2; y < h * 0.3; y += step) {
-    for (let x = step / 2; x < w * 0.42; x += step) {
-      const fade = 1 - (x / (w * 0.42)) * 0.7 - (y / (h * 0.3)) * 0.5;
-      if (fade <= 0.05) continue;
-      const r = step * 0.22 * fade + 0.6;
+function halftone(ctx, x, y, w, h, color) {
+  ctx.fillStyle = color;
+  const step = Math.max(9, w * 0.018);
+  for (let yy = y + step / 2; yy < y + h; yy += step) {
+    for (let xx = x + step / 2; xx < x + w; xx += step) {
+      const r = step * 0.16 * (1 - (yy - y) / h) + step * 0.05;
       ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.arc(xx, yy, r, 0, Math.PI * 2);
       ctx.fill();
     }
   }
 }
 
-/** A jagged starburst badge, e.g. for the year, in the top corner. */
-function burst(ctx, cx, cy, r, points, colour) {
-  ctx.fillStyle = colour;
-  ctx.beginPath();
-  for (let i = 0; i < points * 2; i++) {
-    const a = (i / (points * 2)) * Math.PI * 2 - Math.PI / 2;
-    const rr = i % 2 === 0 ? r : r * 0.62;
-    const px = cx + Math.cos(a) * rr;
-    const py = cy + Math.sin(a) * rr;
-    if (i === 0) ctx.moveTo(px, py);
-    else ctx.lineTo(px, py);
-  }
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = '#111';
-  ctx.lineWidth = Math.max(3, r * 0.08);
-  ctx.stroke();
-}
-
-/** Fits a title to one line inside maxWidth, shrinking the size as needed. */
-function fitTitle(ctx, text, maxWidth, startSize) {
-  let size = startSize;
-  ctx.font = `900 ${size}px ${DISPLAY_FONT}`;
-  while (size > 18 && ctx.measureText(text).width > maxWidth) {
-    size -= 4;
-    ctx.font = `900 ${size}px ${DISPLAY_FONT}`;
-  }
-  return size;
+function outlinedText(ctx, text, cx, y, size, fill, stroke) {
+  ctx.font = `900 ${size}px "Arial Black", "Helvetica Neue", Arial, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = Math.max(2, size * 0.09);
+  ctx.strokeStyle = stroke;
+  ctx.strokeText(text, cx, y);
+  ctx.fillStyle = fill;
+  ctx.fillText(text, cx, y);
 }
 
 /**
- * Draws the whole cover onto `canvas`.
- * photos: an array of three images/canvases (or nulls), one per panel.
- * opts: { layout, grade, size, kicker, title, place, zooms, pans }.
+ * Paint the whole cover onto ctx at size w×h.
+ * opts: { panels, title, subtitle, grade, layout }
  */
-export function drawCoverArt(canvas, photos, opts) {
-  const w = canvas.width;
-  const h = canvas.height;
-  const ctx = canvas.getContext('2d');
-  const layout = LAYOUTS.includes(opts.layout) ? opts.layout : 'triptych';
-  const grade = GRADES.includes(opts.grade) ? opts.grade : 'sunset';
-  const zooms = opts.zooms ?? [1, 1, 1];
-  const pans = opts.pans ?? [[0, 0], [0, 0], [0, 0]];
-  const artH = h * 0.78;
-
-  ctx.fillStyle = '#0d0518';
+export function drawCover(ctx, w, h, opts) {
+  const grade = GRADES[opts.grade] ?? GRADES.gold;
+  ctx.save();
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = grade.paper;
   ctx.fillRect(0, 0, w, h);
 
-  const rects = panelRects(layout, w, h);
-  rects.forEach((r, i) => {
+  const shapes = panelShapes(w, h, opts.layout);
+  const gutter = Math.max(4, w * 0.006);
+
+  shapes.forEach((pts, i) => {
+    const p = opts.panels[i];
+    const top = Math.min(...pts.map((q) => q[1]));
+    const bottom = Math.max(...pts.map((q) => q[1]));
+    const ph = bottom - top;
     ctx.save();
-    tracePanel(ctx, r);
+    tracePoly(ctx, pts);
     ctx.clip();
-    ctx.fillStyle = '#241536';
-    ctx.fillRect(r.x - w * 0.06, r.y, r.w + w * 0.12, r.h);
-    drawFitted(ctx, photos[i], r, zooms[i] ?? 1, pans[i]?.[0] ?? 0, pans[i]?.[1] ?? 0);
-    const [top, bottom] = GRADE_TINTS[grade];
-    const tint = ctx.createLinearGradient(0, r.y, 0, r.y + r.h);
-    tint.addColorStop(0, top);
-    tint.addColorStop(1, bottom);
-    ctx.fillStyle = tint;
-    ctx.fillRect(r.x - w * 0.06, r.y, r.w + w * 0.12, r.h);
+    if (p && p.photo) {
+      drawPhotoCover(ctx, p.photo, 0, top, w, ph, p.scale || 1, p.ox || 0, p.oy || 0);
+    } else if (p && p.scene && SCENES[p.scene]) {
+      SCENES[p.scene].paint(ctx, 0, top, w, ph);
+    } else {
+      ctx.fillStyle = '#241a33';
+      ctx.fillRect(0, top, w, ph);
+    }
+    // Grade tint + halftone corner on the outer panels.
+    ctx.fillStyle = grade.tint;
+    ctx.fillRect(0, top, w, ph);
+    if (i !== 1) {
+      ctx.save();
+      ctx.globalAlpha = 0.5;
+      halftone(ctx, w * 0.72, top + ph * 0.55, w * 0.28, ph * 0.45, grade.ink);
+      ctx.restore();
+    }
     ctx.restore();
-    ctx.save();
-    tracePanel(ctx, r);
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = Math.max(4, w * 0.006);
+    // Gutter: paper stripe, then a thin ink edge.
+    ctx.strokeStyle = grade.paper;
+    ctx.lineWidth = gutter;
+    tracePoly(ctx, pts);
     ctx.stroke();
-    ctx.strokeStyle = '#111111';
-    ctx.lineWidth = Math.max(2, w * 0.003);
+    ctx.strokeStyle = grade.ink;
+    ctx.lineWidth = Math.max(1.5, w * 0.002);
+    tracePoly(ctx, pts);
     ctx.stroke();
-    ctx.restore();
   });
 
+  // Title, tilted a touch, top-left over the first panel.
+  const titleSize = Math.round(w * 0.075);
   ctx.save();
-  ctx.globalAlpha = 0.5;
-  halftone(ctx, w, h, '#ffffff');
+  ctx.translate(w * 0.5, h * 0.115);
+  ctx.rotate(-0.02);
+  outlinedText(ctx, opts.title || 'UNTITLED', 0, 0, titleSize, grade.paper, grade.ink);
   ctx.restore();
+  // Accent underline under the title.
+  ctx.fillStyle = grade.accent;
+  const tw = Math.min(w * 0.6, (opts.title || '').length * titleSize * 0.62);
+  ctx.fillRect(w / 2 - tw / 2, h * 0.125, tw, Math.max(3, h * 0.008));
 
-  const bandY = artH;
-  const bandH = h - artH;
-  const band = ctx.createLinearGradient(0, bandY, 0, h);
-  band.addColorStop(0, '#ffd166');
-  band.addColorStop(1, '#ff5e62');
-  ctx.fillStyle = band;
-  ctx.fillRect(0, bandY, w, bandH);
-  ctx.fillStyle = '#111111';
-  ctx.fillRect(0, bandY, w, Math.max(4, h * 0.006));
-
-  const pad = w * 0.045;
-  const kicker = (opts.kicker ?? '').trim().toUpperCase();
-  const title = (opts.title ?? '').trim().toUpperCase();
-  const place = (opts.place ?? '').trim().toUpperCase();
-
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'alphabetic';
-  if (kicker) {
-    const ks = Math.max(14, h * 0.026);
-    ctx.font = `700 ${ks}px ${LABEL_FONT}`;
-    ctx.fillStyle = '#7a1030';
-    const spaced = kicker.split('').join('  ');
-    ctx.fillText(spaced, pad, bandY + bandH * 0.3);
-  }
-  if (title) {
-    const size = fitTitle(ctx, title, w - pad * 2, h * 0.085);
-    ctx.save();
-    ctx.translate(pad, bandY + bandH * 0.72);
-    ctx.transform(1, 0, -0.06, 1, 0, 0);
-    ctx.font = `900 ${size}px ${DISPLAY_FONT}`;
-    ctx.lineWidth = Math.max(3, size * 0.09);
-    ctx.strokeStyle = '#111111';
-    ctx.strokeText(title, 0, 0);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(title, 0, 0);
-    ctx.restore();
-  }
-  if (place) {
-    const ps = Math.max(13, h * 0.022);
-    ctx.font = `700 ${ps}px ${LABEL_FONT}`;
-    ctx.fillStyle = '#5c0d24';
-    ctx.textAlign = 'right';
-    ctx.fillText(place, w - pad, bandY + bandH * 0.3);
-    ctx.textAlign = 'left';
-  }
-
-  const br = Math.max(26, w * 0.042);
-  burst(ctx, w - br * 1.15, br * 1.15, br, 12, '#ffe259');
-  ctx.fillStyle = '#111111';
-  ctx.font = `900 ${Math.round(br * 0.34)}px ${DISPLAY_FONT}`;
+  // Subtitle bar along the bottom.
+  const barH = Math.max(28, h * 0.055);
+  ctx.fillStyle = grade.bar;
+  ctx.fillRect(0, h - barH, w, barH);
+  ctx.fillStyle = grade.paper;
+  ctx.font = `700 ${Math.round(barH * 0.42)}px Arial, Helvetica, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('2026', w - br * 1.15, br * 1.18);
-  ctx.textBaseline = 'alphabetic';
+  ctx.fillText(opts.subtitle || '', w / 2, h - barH / 2);
+
+  ctx.restore();
 }

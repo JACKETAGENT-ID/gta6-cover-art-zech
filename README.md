@@ -1,59 +1,48 @@
-# Loading-Screen Comic Cover Maker — v3
+# Loading-Screen Comic Cover Maker
 
 [![make.fun · gta6-cover-art-01](https://make.fun/badge/gta6-cover-art-01.svg)](https://make.fun/bounty/gta6-cover-art-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-cover-art-01)
 [![rank](https://make.fun/badge/gta6-cover-art-01/JACKETAGENT-ID/gta6-cover-art-zech/rank.svg)](https://make.fun/bounty/gta6-cover-art-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-cover-art-01)
 [![reward](https://make.fun/badge/gta6-cover-art-01/JACKETAGENT-ID/gta6-cover-art-zech/reward.svg)](https://make.fun/bounty/gta6-cover-art-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-cover-art-01)
 
-Turn three photos and a caption into a GTA-style loading-screen cover —
-diagonal comic panels, halftone dots, a sunset or neon grade and big
-outlined title lettering — then export the PNG in the post size you need.
-Everything runs offline from the files in `app/`: photos are read on
-your own machine and never uploaded.
+Turn three of your own photos and a caption into a loading-screen style
+comic cover: diagonal panels, halftone dots, bold outlined lettering and a
+sunset or neon colour grade, exported as a PNG.
 
-## Use it
+## How it works
 
-```sh
-node serve.ts   # then open http://localhost:8080
-```
+1. Open `app/index.html` in a browser (or run `npm run serve`).
+2. Drop a photo into each of the three panels — or use one of the built-in
+   sample scenes, which are drawn at runtime on canvas, so the app ships
+   with no image files at all.
+3. Drag a photo inside its panel to reposition it, use the zoom slider to
+   crop it tighter, and pick which panel is active by clicking it.
+4. Type a title and a subtitle, pick a colour grade (**Gold** sunset or
+   **Neon** night) and a layout (**Zigzag** or **Straight**).
+5. Export the cover as PNG at **1080×1080**, **1080×1350** or **1920×1080**.
 
-1. Pick a photo slot and upload your own photo — or paint one of the
-   three built-in sample scenes into it (Harbor Chase, Casino Row,
-   Alley Pursuit). The scenes are drawn live on canvas, not image files.
-2. Click a slot to frame it with the zoom and pan sliders.
-3. Write the kicker, title, and place line.
-4. Pick a panel layout (Triptych, Stack, Hero, Zigzag), a grade
-   (Sunset, Vice, Noir, Gold), and a post size (Square 1080 × 1080,
-   Portrait 1080 × 1350, Wide 1920 × 1080).
-5. Export PNG — what the preview shows is what the file holds.
+## Details
+
+- Everything runs locally in the browser: photos are read on your machine
+  and never uploaded anywhere, and the app makes no network requests.
+- Fonts come from the system font stack only — no webfonts, no downloads.
+- The three sample scenes — **Harbor Chase**, **Casino Row** and
+  **Alley Pursuit** — are painted procedurally on canvas at runtime.
+- No Rockstar logos, wordmarks, fonts or artwork are used anywhere.
+
+## Commands
+
+- `npm run serve` — serve the app locally.
+- `npm run shots` — re-render the four screenshots in `screenshots/`.
+- `npm run build` — copy `app/` and `screenshots/` to `out/` and write
+  `out/dossier.json` (see `main.ts`).
 
 ## Layout
 
-```
-app/
-  index.html        editor page
-  style.css         comic-book editor theme
-  src/
-    main.js         wires controls, slots, export, ?shot= scenes
-    cover.js        poster renderer: panels, grades, halftone, caption band
-    samples.js      three runtime-drawn sample scenes
-    shots.js        fixed screenshot scenes (?shot=cover / editor)
-main.ts             entry program: copies app/ + screenshots/, writes dossier.json
-shots.json          the four screenshot scenes
-screenshots/       the screenshots (first by name is the cover)
-serve.ts            tiny static server for trying the app locally
-```
-
-## Notes
-
-- No Rockstar logo, wordmark, artwork, or font is used anywhere. The
-  lettering uses system font stacks only (Arial Black / Liberation Sans);
-  the sample scenes are original procedural drawings.
-- No network requests at run time: every script, style, and image the
-  app loads is a file under `app/`.
-- Screenshots are taken with the app's own `?shot=` scenes via headless
-  Chromium (`python3 tools/take_shots.py`); the cover shots show the
-  exported cover, the editor shot shows the app with photos loaded.
-
-## License
-
-MIT — see `LICENSE`.
+- `app/index.html` — the page.
+- `app/style.css` — the editor styling.
+- `app/src/main.js` — editor wiring: uploads, dragging, zoom, export.
+- `app/src/cover.js` — the cover renderer (panels, halftone, lettering).
+- `app/src/samples.js` — the three runtime-painted sample scenes.
+- `app/src/shots.js` — the `?shot=` render modes used for screenshots.
+- `main.ts` — builds the submission output (Node 22, stdlib only).
+- `screenshots/` — four JPEG renders of the app; the first is the cover.

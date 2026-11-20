@@ -1,161 +1,170 @@
-// Wires the editor: three photo slots (upload your own photo or paint in
-// a built-in scene), layout, grade and size pickers, caption fields, zoom
-// and pan for the active photo, and PNG export. A `?shot=` query instead
-// stages a fixed scene for a screenshot (see ./shots.js).
-import { drawCoverArt, LAYOUTS, GRADES, SIZES } from './cover.js';
-import { makeScene, SCENE_NAMES, SCENE_LABELS } from './samples.js';
+// Editor wiring: uploads, panel selection, drag-to-pan, zoom, caption,
+// grade/layout picks and PNG export. Photos live only in memory —
+// nothing is uploaded anywhere. Shot modes (?shot=...) are in shots.js.
+
+import { drawCover } from './cover.js';
 import { runShot } from './shots.js';
 
-const canvas = document.getElementById('cover');
-const layoutPick = document.getElementById('layout');
-const gradePick = document.getElementById('grade');
-const sizePick = document.getElementById('size');
-const kickerInput = document.getElementById('kicker');
-const titleInput = document.getElementById('title');
-const placeInput = document.getElementById('place');
-const zoomInput = document.getElementById('zoom');
-const panXInput = document.getElementById('panx');
-const panYInput = document.getElementById('pany');
-const exportButton = document.getElementById('export');
-const statusLine = document.getElementById('status');
+const stage = document.getElementById('stage');
+const ctx = stage.getContext('2d');
 
-const sceneCache = new Map();
-function sceneCanvas(name) {
-  if (!sceneCache.has(name)) sceneCache.set(name, makeScene(name));
-  return sceneCache.get(name);
-}
+const state = {
+  panels: [
+    { photo: null, scene: 'harbor', scale: 1.15, ox: 0, oy: 0 },
+    { photo: null, scene: 'casino', scale: 1.15, ox: 0, oy: 0 },
+    { photo: null, scene: 'alley', scale: 1.15, ox: 0, oy: 0 },
+  ],
+  selected: 0,
+  title: 'MIDNIGHT HARBOR',
+  subtitle: 'Three photos. One cover.',
+  grade: 'gold',
+  layout: 'zigzag',
+};
 
-const slots = SCENE_NAMES.map((name) => ({ kind: 'scene', scene: name, img: sceneCanvas(name) }));
-const zooms = [1, 1, 1];
-const pans = [[0, 0], [0, 0], [0, 0]];
-let activeSlot = 0;
-
-function currentPhotos() {
-  return slots.map((slot) => slot.img);
-}
-
-function redraw() {
-  const size = SIZES[sizePick.value] ?? SIZES.square;
-  canvas.width = size.w;
-  canvas.height = size.h;
-  drawCoverArt(canvas, currentPhotos(), {
-    layout: layoutPick.value,
-    grade: gradePick.value,
-    kicker: kickerInput.value,
-    title: titleInput.value,
-    place: placeInput.value,
-    zooms: [...zooms],
-    pans: pans.map((p) => [...p]),
+function render() {
+  drawCover(ctx, stage.width, stage.height, {
+    panels: state.panels,
+    title: state.title,
+    subtitle: state.subtitle,
+    grade: state.grade,
+    layout: state.layout,
   });
-  const active = document.querySelector('.slot.active');
-  if (active) active.classList.remove('active');
-  const next = document.querySelector(`.slot[data-slot="${activeSlot}"]`);
-  if (next) next.classList.add('active');
-  zoomInput.value = String(zooms[activeSlot]);
-  panXInput.value = String(pans[activeSlot][0]);
-  panYInput.value = String(pans[activeSlot][1]);
+  document.querySelectorAll('.thumb').forEach((b, i) => {
+    b.classList.toggle('active', i === state.selected);
+  });
 }
 
-/** Loads an image from a URL, resolving once it can be drawn. */
-export function loadImage(url) {
-  return new Promise((resolve, reject) => {
+function panelAt(clientX, clientY) {
+  const rect = stage.getBoundingClientRect();
+  const x = ((clientX - rect.left) / rect.width) * stage.width;
+  const y = ((clientY - rect.top) / rect.height) * stage.height;
+  const third = stage.height / 3;
+  const index = y < third ? 0 : y < 2 * third ? 1 : 2;
+  return { index, x, y };
+}
+
+// Uploads: read the file locally into an Image, keep it in memory.
+document.querySelectorAll('[data-upload]').forEach((input) => {
+  input.addEventListener('change', () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    const idx = Number(input.dataset.upload);
+    const url = URL.createObjectURL(file);
     const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = reject;
+    img.onload = () => {
+      state.panels[idx].photo = img;
+      state.panels[idx].scene = null;
+      state.selected = idx;
+      URL.revokeObjectURL(url);
+      render();
+    };
     img.src = url;
   });
-}
+});
 
-function fillPick(select, names, labels) {
-  for (const name of names) {
-    const option = document.createElement('option');
-    option.value = name;
-    option.textContent = labels ? labels[name] : name;
-    select.appendChild(option);
-  }
-}
-
-document.querySelectorAll('.slot').forEach((button) => {
-  const index = Number(button.dataset.slot);
-  button.addEventListener('click', () => {
-    activeSlot = index;
-    redraw();
-  });
-  const picker = button.querySelector('.scene-pick');
-  fillPick(picker, SCENE_NAMES, SCENE_LABELS);
-  picker.value = slots[index].scene;
-  picker.addEventListener('change', () => {
-    slots[index] = { kind: 'scene', scene: picker.value, img: sceneCanvas(picker.value) };
-    activeSlot = index;
-    redraw();
-  });
-  const upload = button.querySelector('.upload');
-  upload.addEventListener('change', async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-    slots[index] = { kind: 'upload', scene: null, img: await loadImage(URL.createObjectURL(file)) };
-    activeSlot = index;
-    statusLine.textContent = `Photo ${index + 1} loaded: ${file.name}`;
-    redraw();
+// Sample-scene buttons fill a panel with a runtime-painted scene.
+document.querySelectorAll('[data-scene]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const slot = btn.closest('.photo-slot');
+    const idx = Number(slot.dataset.panel);
+    state.panels[idx].photo = null;
+    state.panels[idx].scene = btn.dataset.scene;
+    state.selected = idx;
+    render();
   });
 });
 
-layoutPick.addEventListener('change', redraw);
-gradePick.addEventListener('change', redraw);
-sizePick.addEventListener('change', redraw);
-kickerInput.addEventListener('input', redraw);
-titleInput.addEventListener('input', redraw);
-placeInput.addEventListener('input', redraw);
-zoomInput.addEventListener('input', () => {
-  zooms[activeSlot] = Number(zoomInput.value);
-  redraw();
+// Panel picker + drag to pan the selected panel's photo.
+let drag = null;
+stage.addEventListener('pointerdown', (e) => {
+  const hit = panelAt(e.clientX, e.clientY);
+  state.selected = hit.index;
+  drag = { x: e.clientX, y: e.clientY, ox: state.panels[hit.index].ox, oy: state.panels[hit.index].oy };
+  stage.setPointerCapture(e.pointerId);
+  render();
 });
-panXInput.addEventListener('input', () => {
-  pans[activeSlot][0] = Number(panXInput.value);
-  redraw();
+stage.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  const rect = stage.getBoundingClientRect();
+  const p = state.panels[state.selected];
+  p.ox = Math.max(-0.5, Math.min(0.5, drag.ox + (e.clientX - drag.x) / rect.width));
+  p.oy = Math.max(-0.5, Math.min(0.5, drag.oy + (e.clientY - drag.y) / rect.height));
+  render();
 });
-panYInput.addEventListener('input', () => {
-  pans[activeSlot][1] = Number(panYInput.value);
-  redraw();
+stage.addEventListener('pointerup', () => { drag = null; });
+
+document.querySelectorAll('.thumb').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    state.selected = Number(btn.dataset.panel);
+    render();
+  });
 });
 
-exportButton.addEventListener('click', () => {
-  const size = SIZES[sizePick.value] ?? SIZES.square;
-  canvas.toBlob((blob) => {
+const zoom = document.getElementById('zoom');
+zoom.addEventListener('input', () => {
+  state.panels[state.selected].scale = Number(zoom.value);
+  render();
+});
+
+document.getElementById('resetView').addEventListener('click', () => {
+  const p = state.panels[state.selected];
+  p.scale = 1.15;
+  p.ox = 0;
+  p.oy = 0;
+  zoom.value = '1.15';
+  render();
+});
+
+document.getElementById('title').addEventListener('input', (e) => {
+  state.title = e.target.value.toUpperCase();
+  render();
+});
+document.getElementById('subtitle').addEventListener('input', (e) => {
+  state.subtitle = e.target.value;
+  render();
+});
+document.getElementById('grade').addEventListener('change', (e) => {
+  state.grade = e.target.value;
+  render();
+});
+document.getElementById('layout').addEventListener('change', (e) => {
+  state.layout = e.target.value;
+  render();
+});
+
+// Export: paint the cover at full size on an offscreen canvas, save PNG.
+function exportPNG(sizeLabel) {
+  const [w, h] = sizeLabel.split('x').map(Number);
+  const off = document.createElement('canvas');
+  off.width = w;
+  off.height = h;
+  drawCover(off.getContext('2d'), w, h, {
+    panels: state.panels,
+    title: state.title,
+    subtitle: state.subtitle,
+    grade: state.grade,
+    layout: state.layout,
+  });
+  off.toBlob((blob) => {
     if (!blob) return;
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `cover-${size.w}x${size.h}.png`;
+    a.href = url;
+    a.download = `cover-${w}x${h}.png`;
     a.click();
-    statusLine.textContent = `Saved cover-${size.w}x${size.h}.png`;
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
   }, 'image/png');
-});
-
-/** Applies a shot's options (from ?shot=) onto the editor state. */
-export function applyShotOptions(opts) {
-  if (opts.layout && LAYOUTS.includes(opts.layout)) layoutPick.value = opts.layout;
-  if (opts.grade && GRADES.includes(opts.grade)) gradePick.value = opts.grade;
-  if (opts.size && SIZES[opts.size]) sizePick.value = opts.size;
-  if (opts.kicker !== undefined) kickerInput.value = opts.kicker;
-  if (opts.title !== undefined) titleInput.value = opts.title;
-  if (opts.place !== undefined) placeInput.value = opts.place;
-  if (Array.isArray(opts.scenes)) {
-    opts.scenes.forEach((name, i) => {
-      if (SCENE_NAMES.includes(name)) {
-        slots[i] = { kind: 'scene', scene: name, img: sceneCanvas(name) };
-        const picker = document.querySelector(`.slot[data-slot="${i}"] .scene-pick`);
-        if (picker) picker.value = name;
-      }
-    });
-  }
-  if (typeof opts.zoom === 'number') zooms[0] = zooms[1] = zooms[2] = opts.zoom;
-  redraw();
 }
 
-const query = new URLSearchParams(location.search);
-const shot = query.get('shot');
+document.querySelectorAll('[data-export]').forEach((btn) => {
+  btn.addEventListener('click', () => exportPNG(btn.dataset.export));
+});
+
+// Shot mode (?shot=cover|cover2|square|editor) renders a fixed frame for
+// screenshots; otherwise the editor starts with the three sample scenes.
+const shot = new URLSearchParams(location.search).get('shot');
 if (shot) {
-  runShot(shot, query, applyShotOptions);
+  runShot(shot, stage, state, render);
 } else {
-  redraw();
+  render();
 }

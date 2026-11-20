@@ -1,104 +1,102 @@
-"""Takes the entry's screenshots: serves app/ locally, opens each scene
-from shots.json in headless Chromium, waits until the app reports itself
-ready, and saves a JPEG into screenshots/.
+#!/usr/bin/env python3
+"""Render the four bounty screenshots with headless Chromium + PIL.
 
-Usage (from the repository root):
-    python3 tools/take_shots.py [--port 8903] [--quality 82]
+Each shot loads app/index.html with a ?shot= mode, captures a PNG with
+headless Chromium, then converts it to a JPEG inside the bounty limits
+(long side <= 1280 px, short side >= 480 px, <= 256 KiB).
 
-Each shot is checked against the bounty limits (long side at most 1280,
-short side at least 480, at most 256 KiB) and the script exits non-zero
-if one breaks them. Nothing is written anywhere except screenshots/.
+Usage: python3 tools/take_shots.py   (run from the repo root)
 """
 
-import argparse
-import json
-import os
+import socket
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.request
+from pathlib import Path
 
-HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SHOTS_FILE = os.path.join(HERE, "shots.json")
-SHOTS_DIR = os.path.join(HERE, "screenshots")
+from PIL import Image
+
+REPO = Path(__file__).resolve().parent.parent
+OUT = REPO / "screenshots"
+PORT = 8471
+BASE_URL = f"http://127.0.0.1:{PORT}/app/index.html"
+
+# (mode, file, window width, window height)
+SHOTS = [
+    ("cover", "1-cover.jpg", 1280, 720),
+    ("editor", "2-editor.jpg", 1280, 800),
+    ("cover2", "3-cover.jpg", 1280, 720),
+    ("square", "4-cover-square.jpg", 1024, 1024),
+]
+
+MAX_BYTES = 256 * 1024
 
 
-def wait_for_server(url, timeout=30):
-    deadline = time.time() + timeout
+def capture(url, width, height, png_path):
+    """Screenshot with Playwright: the plain --screenshot flag crops the
+    page in this environment, while Playwright captures the viewport."""
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        page = browser.new_page(viewport={"width": width, "height": height})
+        page.goto(url)
+        page.wait_for_timeout(700)
+        page.screenshot(path=str(png_path))
+        browser.close()
+
+
+def to_jpeg(png_path, jpg_path):
+    with Image.open(png_path) as img:
+        img = img.convert("RGB")
+        if max(img.size) > 1280:
+            img.thumbnail((1280, 1280), Image.LANCZOS)
+        quality = 88
+        while quality >= 55:
+            img.save(jpg_path, "JPEG", quality=quality, optimize=True)
+            if jpg_path.stat().st_size <= MAX_BYTES:
+                return
+            quality -= 8
+        raise SystemExit(f"{jpg_path.name} still over 256 KiB at quality 55")
+
+
+def start_server():
+    """Serve the repo over plain HTTP: ES modules are blocked from file://."""
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "http.server", str(PORT), "--bind", "127.0.0.1"],
+        cwd=REPO, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    deadline = time.time() + 15
     while time.time() < deadline:
         try:
-            with urllib.request.urlopen(url, timeout=2) as response:
-                if response.status == 200:
-                    return True
+            with urllib.request.urlopen(BASE_URL, timeout=2) as resp:
+                if resp.status == 200:
+                    return proc
         except Exception:
-            time.sleep(0.5)
-    return False
-
-
-def check_shot(path, width, height):
-    problems = []
-    size = os.path.getsize(path)
-    if size > 262144:
-        problems.append(f"over 256 KiB ({size} bytes)")
-    if max(width, height) > 1280:
-        problems.append(f"long side {max(width, height)} over 1280")
-    if min(width, height) < 480:
-        problems.append(f"short side {min(width, height)} under 480")
-    return problems
+            time.sleep(0.2)
+    proc.kill()
+    raise SystemExit("local HTTP server did not come up")
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--port", type=int, default=8903)
-    parser.add_argument("--quality", type=int, default=82)
-    args = parser.parse_args()
-
-    with open(SHOTS_FILE, encoding="utf-8") as handle:
-        shots = json.load(handle)
-    os.makedirs(SHOTS_DIR, exist_ok=True)
-
-    server = subprocess.Popen(
-        ["node", "serve.ts", "--port", str(args.port)],
-        cwd=HERE,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    OUT.mkdir(exist_ok=True)
+    server = start_server()
     try:
-        base = f"http://127.0.0.1:{args.port}"
-        if not wait_for_server(base + "/index.html"):
-            print("server did not come up", file=sys.stderr)
-            return 1
-
-        from playwright.sync_api import sync_playwright
-
-        failures = []
-        with sync_playwright() as playwright:
-            browser = playwright.chromium.launch()
-            try:
-                for shot in shots:
-                    page = browser.new_page(viewport={"width": shot["w"], "height": shot["h"]})
-                    page.goto(base + "/index.html" + shot["query"])
-                    try:
-                        page.wait_for_function("window.__shotReady === true", timeout=15000)
-                    except Exception:
-                        print(f"{shot['name']}: app never reported ready", file=sys.stderr)
-                        failures.append(shot["name"])
-                    page.wait_for_timeout(400)
-                    out = os.path.join(SHOTS_DIR, shot["name"])
-                    page.screenshot(path=out, type="jpeg", quality=args.quality)
-                    page.close()
-                    problems = check_shot(out, shot["w"], shot["h"])
-                    size = os.path.getsize(out)
-                    print(f"{shot['name']}: {shot['w']}x{shot['h']} {size} bytes"
-                          + (f"  PROBLEM: {'; '.join(problems)}" if problems else ""))
-                    failures.extend(f"{shot['name']}: {p}" for p in problems)
-            finally:
-                browser.close()
-        return 1 if failures else 0
+        with tempfile.TemporaryDirectory() as tmp:
+            for mode, name, width, height in SHOTS:
+                png = Path(tmp) / f"{mode}.png"
+                capture(f"{BASE_URL}?shot={mode}", width, height, png)
+                jpg = OUT / name
+                to_jpeg(png, jpg)
+                with Image.open(jpg) as img:
+                    print(f"{name}: {img.size[0]}x{img.size[1]} "
+                          f"{jpg.stat().st_size} bytes")
     finally:
         server.terminate()
         server.wait(timeout=10)
+    print("done")
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())
