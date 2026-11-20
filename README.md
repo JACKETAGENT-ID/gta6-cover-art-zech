@@ -1,61 +1,46 @@
-# Loading Screen Comic — GTA-Style Cover Maker
+# Loading Screen — GTA 6 Cover Maker
 
 [![make.fun · gta6-cover-art-01](https://make.fun/badge/gta6-cover-art-01.svg)](https://make.fun/bounty/gta6-cover-art-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-cover-art-01)
 [![rank](https://make.fun/badge/gta6-cover-art-01/JACKETAGENT-ID/gta6-cover-art-zech/rank.svg)](https://make.fun/bounty/gta6-cover-art-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-cover-art-01)
 [![reward](https://make.fun/badge/gta6-cover-art-01/JACKETAGENT-ID/gta6-cover-art-zech/reward.svg)](https://make.fun/bounty/gta6-cover-art-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-cover-art-01)
 
-Turn your photo into a comic-book loading-screen cover: diagonal panels with
-thick black outlines, halftone dots, a red starburst sticker, extra-bold
-caption lettering and a loading bar — exported as a PNG to share.
+Turn your photos into GTA-style poster covers: diagonal comic panels, halftone ink, a big caption — then export the PNG in the post size you need. Everything runs offline from the files in `app/`, and your photos never leave your machine.
 
-## How it works
-
-1. **Add photos** — pick up to three photos from your machine (slots A, B, C),
-   or use the built-in comic city samples, drawn live on canvas by the app.
-   Photos are read locally and never uploaded.
-2. **Pick a layout** — Duo Diagonal (hero + street), Triple Strip (three
-   slashes) or Solo Hero (one big frame). Each panel takes any of your photos.
-3. **Crop & position** — drag the photo right on the preview, or use the zoom
-   and move sliders per panel.
-4. **Write the words** — caption, tagline and loading percentage, with a
-   halftone toggle.
-5. **Export** — one click saves a PNG at 1080×1080, 1080×1350 or 1920×1080.
-
-## Design
-
-"Loading-Screen Comic": flat yellow/red/black comic colours, halftone dots,
-diagonal gutters, extra-bold system-font display lettering with a black outline
-and red drop shadow, plus a loading bar in the footer strip. Everything is
-original — no Rockstar logo, artwork or font. Lettering uses the machine's own
-heavy sans (Arial Black / Liberation Sans Bold) and the sample scenes are
-drawn at runtime on canvas, so the app ships no font or image files at all.
-
-## Run it
+## Use it
 
 ```sh
-node serve.ts
-# open http://localhost:8080
+node serve.ts   # then open http://localhost:8080
 ```
 
-Static files only — `app/index.html` opens in desktop Chrome with no network
-request. Build the hand-in with:
-
-```sh
-mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
-```
+1. Pick a photo slot and paint one of the three built-in scenes into it — Dockside Dawn, Neon Downtown, Getaway — or upload your own photo. The scenes are drawn live on canvas, not image files.
+2. Frame the active photo with the zoom and pan sliders.
+3. Write the kicker, title, and place line.
+4. Pick a panel layout (Stack, Hero, Strip, Solo), a grade (Sunset, Noir, Acid, Mono), and a post size (Square 1080 × 1080, Portrait 1080 × 1350, Wide 1920 × 1080).
+5. Export PNG — what the preview shows is what the file holds.
 
 ## Layout
 
-- `app/index.html` — editor page
-- `app/style.css` — comic editor styling
-- `app/src/cover.js` — the cover renderer (panels, halftone, lettering, footer)
-- `app/src/samples.js` — three comic city scenes drawn live on canvas
-- `app/src/main.js` — editor wiring, drag-to-pan, export
-- `app/src/shots.js` — fixed scenes for screenshots (`?shot=`)
-- `screenshots/` — cover + editor screenshots
-- `main.ts` — hands `app/` and `screenshots/` in and writes `dossier.json`
-- `serve.ts` — tiny static server for local trying
+```
+app/
+  index.html        editor page
+  style.css         comic-book editor theme
+  src/
+    main.js         wires controls, slots, export, ?shot= scenes
+    cover.js        poster renderer: panels, grades, caption band
+    samples.js      three runtime-drawn sample scenes
+    shots.js        screenshot mode (?shot=cover / editor)
+main.ts             entry program: copies app/ + screenshots/, writes dossier.json
+shots.json          the four screenshot scenes
+screenshots/       the screenshots (first by name is the cover)
+serve.ts            tiny static server for trying the app locally
+```
+
+## Notes
+
+- No Rockstar logo, wordmark, artwork, or font is used anywhere. The lettering uses system font stacks only (Arial Black / Noto Sans Display / Liberation Sans); the sample scenes are original procedural drawings.
+- No network requests at run time: every script, style, and image the app loads is a file under `app/`.
+- Screenshots are taken with the app's own `?shot=` scenes via headless Chromium; the cover shots show the exported cover, the editor shot shows the app with photos loaded.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see `LICENSE`.

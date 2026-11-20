@@ -1,29 +1,55 @@
-// Fixed scenes for screenshots: ?shot=editor shows the page with sample scenes
-// loaded; ?shot=cover shows the cover alone. `photo` picks the drawn scene for
-// slot A, `photo2`/`photo3` the others (boulevard, pier or rooftop); `caption`,
-// `tagline`, `layout` and `size` set the cover. window.__shotReady is set once
-// painted.
-import { makeSampleScene } from './samples.js';
+// Screenshot mode: when the page opens with ?shot=cover (or editor),
+// the app paints exactly what the screenshots must show, so the maker
+// can capture it with headless Chromium. A cover shot draws the same
+// canvas the Export button writes, at the chosen post size; an editor
+// shot just hands its parameters to the editor so it opens pre-filled.
 
-export async function runShot(shot, query, app) {
-  if (shot === 'cover') document.body.classList.add('shot-cover');
-  const caption = query.get('caption');
-  if (caption) app.setCaption(caption);
-  const tagline = query.get('tagline');
-  if (tagline) app.setTagline(tagline);
-  const layout = query.get('layout');
-  if (layout) app.setLayout(layout);
-  const size = query.get('size');
-  if (size) app.setSize(size);
-  app.loadAllSamples();
-  app.buildPanelTabs();
-  app.syncPanelControls();
-  // Swap in the requested scenes for slots A/B/C.
-  const picks = { A: query.get('photo'), B: query.get('photo2'), C: query.get('photo3') };
-  for (const [slot, name] of Object.entries(picks)) {
-    if (!name) continue;
-    app.state.photos[slot] = makeSampleScene(name);
-  }
-  app.redraw();
-  requestAnimationFrame(() => requestAnimationFrame(() => { window.__shotReady = true; }));
+import { sceneCanvas } from './samples.js';
+import { drawCover, coverSize } from './cover.js';
+
+export function readShotParams() {
+  const q = new URLSearchParams(location.search);
+  return {
+    shot: q.get('shot') || '',
+    photo: q.get('photo') || 'dockside',
+    caption: q.get('caption') || '',
+    kicker: q.get('kicker') || '',
+    place: q.get('place') || '',
+    layout: q.get('layout') || '',
+    grade: q.get('grade') || '',
+    size: q.get('size') || '',
+  };
+}
+
+// Render a full-page cover and take over the document. Returns true
+// when a shot was rendered (the editor must not start after that).
+export function renderCoverShot(p) {
+  if (p.shot !== 'cover') return false;
+  const { w, h } = coverSize(p.size || 'square');
+  document.body.innerHTML = '';
+  document.body.style.margin = '0';
+  document.body.style.background = '#14082b';
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  canvas.style.display = 'block';
+  canvas.style.width = '100vw';
+  canvas.style.height = '100vh';
+  canvas.style.objectFit = 'contain';
+  document.body.appendChild(canvas);
+  const photos = [
+    sceneCanvas(p.photo || 'dockside', 900, 675),
+    sceneCanvas('downtown', 900, 675),
+    sceneCanvas('getaway', 900, 675),
+  ];
+  drawCover(canvas, {
+    photos,
+    layout: p.layout || 'stack',
+    grade: p.grade || 'sunset',
+    kicker: p.kicker || 'VICE CITY',
+    title: p.caption || 'Sunset Heist',
+    place: p.place || 'Ocean Drive',
+  });
+  document.title = 'shot-cover';
+  return true;
 }

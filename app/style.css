@@ -1,61 +1,262 @@
-/* Loading Screen Comic — thick black outlines, flat yellow/red, hard shadows.
-   Lettering uses the machine's own heavy sans (Arial Black on desktop,
-   Liberation Sans Bold on Linux) — no font files are shipped. */
-html, body { margin: 0; min-height: 100%; background: #ffd400; color: #111; font: 600 15px/1.45 "Arial Narrow", "Liberation Sans", Arial, sans-serif; }
-.app { display: flex; gap: 28px; align-items: flex-start; justify-content: center; padding: 22px; box-sizing: border-box; }
-.controls { width: 330px; flex: none; display: flex; flex-direction: column; gap: 16px; }
-.controls h1 {
-  margin: 0; font-family: "Arial Black", "Liberation Sans", Arial, sans-serif; font-weight: 900; font-size: 46px; line-height: 0.95;
-  letter-spacing: 1px; color: #111; text-shadow: 3px 3px 0 #e63329, 6px 6px 0 #fff;
-}
-.tag { margin: 0; font-size: 14px; }
-fieldset {
-  margin: 0; padding: 14px; border: 3px solid #111; border-radius: 10px;
-  background: #fff; box-shadow: 6px 6px 0 #111; display: flex; flex-direction: column; gap: 10px;
-}
-legend { font-family: "Arial Black", "Liberation Sans", Arial, sans-serif; font-weight: 900; font-size: 20px; letter-spacing: 1px; padding: 0 8px; background: #111; color: #ffd400; border-radius: 6px; }
-label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; letter-spacing: 0.5px; }
-label.check { flex-direction: row; align-items: center; gap: 8px; }
-input[type=text], select {
-  font: 15px/1.3 system-ui, sans-serif; padding: 8px; border: 2px solid #111; border-radius: 6px; background: #fff8d6;
-}
-input[type=range] { accent-color: #e63329; }
-.hint { margin: 0; font-size: 12px; color: #555; }
-.photos { gap: 8px; }
-.slot { display: flex; align-items: center; gap: 8px; }
-.slot-name {
-  width: 26px; height: 26px; flex: none; display: grid; place-items: center;
-  background: #111; color: #ffd400; font-family: "Arial Black", "Liberation Sans", Arial, sans-serif; font-weight: 900; font-size: 18px; border-radius: 50%;
-}
-.thumb { width: 52px; height: 52px; object-fit: cover; border: 2px solid #111; border-radius: 6px; background: #eee; }
-.file-btn, .sample-btn {
-  font: 700 13px/1 system-ui, sans-serif; padding: 8px 10px; border: 2px solid #111; border-radius: 6px;
-  background: #ffd400; cursor: pointer; box-shadow: 3px 3px 0 #111;
-}
-.sample-btn { background: #fff; }
-.file-btn:active, .sample-btn:active, button:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 #111; }
-.panel-tabs { display: flex; gap: 8px; }
-.panel-tab {
-  flex: 1; font: 700 13px/1 system-ui, sans-serif; padding: 8px 4px; border: 2px solid #111;
-  border-radius: 6px; background: #fff; cursor: pointer;
-}
-.panel-tab[aria-selected="true"] { background: #e63329; color: #fff; }
-#export {
-  font-family: "Arial Black", "Liberation Sans", Arial, sans-serif; font-weight: 900; font-size: 26px; letter-spacing: 2px; padding: 10px;
-  border: 3px solid #111; border-radius: 8px; background: #e63329; color: #fff; cursor: pointer;
-  box-shadow: 5px 5px 0 #111;
-}
-#status { margin: 0; min-height: 1.2em; font-size: 13px; }
-.stage { position: sticky; top: 22px; display: flex; flex-direction: column; gap: 10px; align-items: center; }
-#preview {
-  width: min(72vh, 62vw); height: auto; max-height: 82vh; object-fit: contain;
-  border: 4px solid #111; border-radius: 6px; box-shadow: 10px 10px 0 #111; background: #111;
-  cursor: grab; touch-action: none;
-}
-#preview.dragging { cursor: grabbing; }
-.stage-hint { margin: 0; font-size: 13px; background: #111; color: #ffd400; padding: 4px 10px; border-radius: 6px; }
+/* Loading Screen — comic-book editor theme. Yellow paper, hard black
+   rules, halftone dots. Every colour is literal: the page loads no
+   images and no webfonts. */
 
-/* Screenshot mode: cover only, edge to edge. */
-body.shot-cover .controls, body.shot-cover .stage-hint { display: none; }
-body.shot-cover .app { padding: 0; }
-body.shot-cover #preview { width: 100vw; height: 100vh; max-height: none; border: 0; border-radius: 0; box-shadow: none; }
+:root {
+  --paper: #ffd166;
+  --ink: #111111;
+  --card: #fff8e7;
+  --pink: #ff2e88;
+  --teal: #2ec4b6;
+  --sky: #7ee8fa;
+  --display: "Arial Black", "Noto Sans Display", "Liberation Sans", Arial, sans-serif;
+  --body: "Noto Sans Display", "Liberation Sans", Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  background-image: radial-gradient(rgba(17, 17, 17, 0.14) 1.2px, transparent 1.3px);
+  background-size: 14px 14px;
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 16px;
+  line-height: 1.45;
+}
+
+.masthead {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 28px 20px 8px;
+}
+
+.eyebrow {
+  margin: 0 0 4px;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  font-size: 13px;
+}
+
+.masthead h1 {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 900;
+  font-size: clamp(40px, 7vw, 84px);
+  line-height: 0.95;
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+  text-shadow: 4px 4px 0 var(--pink);
+}
+
+.masthead .sub {
+  max-width: 640px;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.workbench {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 12px 20px 24px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 860px) {
+  .workbench { grid-template-columns: 1fr; }
+}
+
+.stage {
+  position: sticky;
+  top: 12px;
+}
+
+@media (max-width: 860px) {
+  .stage { position: static; }
+}
+
+.preview-frame {
+  background: var(--ink);
+  border: 4px solid var(--ink);
+  box-shadow: 8px 8px 0 var(--pink);
+  padding: 0;
+  line-height: 0;
+}
+
+.preview-frame canvas {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.stage-note {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.panel {
+  background: var(--card);
+  border: 4px solid var(--ink);
+  box-shadow: 8px 8px 0 var(--ink);
+  padding: 18px 18px 22px;
+}
+
+.panel h2 {
+  margin: 18px 0 8px;
+  font-family: var(--display);
+  font-size: 19px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.panel h2:first-child { margin-top: 0; }
+
+.pick-label {
+  margin: 10px 0 6px;
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.slots {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.slot-card {
+  font: inherit;
+  text-align: left;
+  background: #ffffff;
+  border: 3px solid var(--ink);
+  padding: 0;
+  cursor: pointer;
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+.slot-card.active {
+  outline: 3px solid var(--pink);
+  outline-offset: 2px;
+}
+
+.slot-thumb {
+  display: block;
+  height: 84px;
+  background: #e9e2cf;
+  color: #6b6353;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 84px;
+  text-align: center;
+  overflow: hidden;
+  border-bottom: 3px solid var(--ink);
+}
+
+.slot-thumb canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.slot-name {
+  display: block;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.hint {
+  font-size: 13px;
+  color: #4d4636;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.pick {
+  font: inherit;
+  font-weight: 800;
+  font-size: 14px;
+  background: #ffffff;
+  border: 3px solid var(--ink);
+  padding: 7px 12px;
+  cursor: pointer;
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+.pick.on {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.btn {
+  font: inherit;
+  font-weight: 800;
+  background: var(--pink);
+  color: #ffffff;
+  border: 3px solid var(--ink);
+  padding: 9px 14px;
+  cursor: pointer;
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+.btn.ghost {
+  background: #ffffff;
+  color: var(--ink);
+}
+
+.btn.big {
+  width: 100%;
+  font-family: var(--display);
+  font-size: 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: var(--teal);
+  color: var(--ink);
+  padding: 14px;
+  margin-top: 14px;
+}
+
+.btn:active, .pick:active, .slot-card:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--ink); }
+
+.slider, .field {
+  display: block;
+  font-weight: 800;
+  font-size: 14px;
+  margin: 8px 0;
+}
+
+.slider input[type="range"] {
+  width: 100%;
+  accent-color: var(--pink);
+}
+
+.field input[type="text"] {
+  display: block;
+  width: 100%;
+  font: inherit;
+  font-weight: 600;
+  border: 3px solid var(--ink);
+  padding: 8px 10px;
+  margin-top: 4px;
+  background: #ffffff;
+}
+
+.foot {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 20px 32px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #3d3a2e;
+}

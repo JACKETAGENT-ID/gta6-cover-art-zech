@@ -1,0 +1,1 @@
+{"description":"Loading Screen — a GTA 6-style cover art maker. Diagonal comic panels, halftone ink, runtime-drawn sample scenes.","license":"MIT","name":"gta6-cover-art-zech","private":true,"scripts":{"build":"mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts","serve":"node serve.ts"},"type":"module","version":"2.0.0"}

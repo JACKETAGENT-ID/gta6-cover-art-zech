@@ -1,32 +1,26 @@
-// Sample scenes drawn live on canvas: three comic-city views the editor loads
-// as its built-in photos. No image files are shipped — every pixel comes from
-// the code below, so the scenes work offline and cost the entry no assets.
-// Each scene is drawn on its own offscreen canvas (960 x 1200) and returned
-// as a canvas element, which the cover renderer draws exactly like a photo.
+// Sample scenes for the cover maker, drawn live on canvas at run time.
+// Nothing here is a photo file: every pixel is procedural, so the three
+// "photos" below are original drawings the app paints when asked. Each
+// painter works on any canvas size and is deterministic: the same scene
+// id always paints the same picture, because the random numbers come
+// from a small seeded generator instead of Math.random().
 
-export const SAMPLE_SCENES = {
-  boulevard: 'Boulevard — sunset strip',
-  pier: 'Pier — ocean drive',
-  rooftop: 'Rooftop — night city',
-};
+export const SCENES = [
+  { id: 'dockside', label: 'Dockside Dawn', hint: 'Cranes and containers at first light' },
+  { id: 'downtown', label: 'Neon Downtown', hint: 'Towers, searchlights and a big moon' },
+  { id: 'getaway', label: 'Getaway', hint: 'A chase down the coast road' },
+];
 
-/** Deterministic random stream, so a scene looks the same on every load. */
-function rng(seed) {
+// A tiny seeded generator (mulberry32). One seed per scene keeps every
+// drawing stable between loads, screenshots and exports.
+function seeded(seed) {
   let a = seed >>> 0;
-  return () => {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
     let t = Math.imul(a ^ (a >>> 15), 1 | a);
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
-}
-
-function makeCanvas(w, h) {
-  const c = document.createElement('canvas');
-  c.width = w;
-  c.height = h;
-  return c;
 }
 
 function sky(ctx, w, h, stops) {
@@ -36,328 +30,359 @@ function sky(ctx, w, h, stops) {
   ctx.fillRect(0, 0, w, h);
 }
 
-function sunDisc(ctx, cx, cy, r, color) {
-  ctx.save();
+function disc(ctx, x, y, r, color) {
   ctx.fillStyle = color;
   ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.fill();
-  ctx.restore();
 }
 
-/** Synthwave sun: a disc with horizontal slits cut out of its lower half. */
-function synthSun(ctx, cx, cy, r) {
-  sunDisc(ctx, cx, cy, r, '#ffd400');
-  ctx.save();
-  ctx.fillStyle = '#ff7a1a';
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.clip();
-  ctx.fillStyle = '#ff5e3a';
-  let y = cy + r * 0.08;
-  let gap = r * 0.07;
-  while (y < cy + r) {
-    ctx.fillRect(cx - r, y, r * 2, gap);
-    y += gap * 2.4;
-    gap *= 1.5;
-  }
-  ctx.restore();
-  ctx.save();
-  ctx.strokeStyle = '#111';
-  ctx.lineWidth = 6;
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.restore();
-}
-
-/** A row of dark skyline blocks with lit windows. */
-function skyline(ctx, w, baseY, topY, color, rand, lit) {
-  ctx.fillStyle = color;
-  let x = -20;
-  while (x < w + 20) {
-    const bw = 60 + rand() * 130;
-    const bh = baseY - (topY + rand() * (baseY - topY) * 0.55);
-    ctx.fillRect(x, baseY - bh, bw, bh);
-    if (lit) {
-      for (let wy = baseY - bh + 16; wy < baseY - 14; wy += 26) {
-        for (let wx = x + 12; wx < x + bw - 12; wx += 24) {
-          if (rand() < 0.42) {
-            ctx.fillStyle = '#ffd400';
-            ctx.fillRect(wx, wy, 10, 14);
-            ctx.fillStyle = color;
-          }
-        }
-      }
-    }
-    if (rand() < 0.3) {
-      ctx.fillRect(x + bw * 0.35, baseY - bh - 26, 8, 26);
-    }
-    x += bw + 6 + rand() * 22;
+// A synthwave sun: a solid disc with horizontal slits cut out of its
+// lower half, so the sky shows through in stripes.
+function slitSun(ctx, x, y, r, color, skyColor) {
+  disc(ctx, x, y, r, color);
+  ctx.fillStyle = skyColor;
+  let gap = r * 0.08;
+  let yy = y + r * 0.05;
+  let thick = r * 0.05;
+  while (yy < y + r) {
+    ctx.fillRect(x - r - 2, yy, r * 2 + 4, thick);
+    yy += gap + thick;
+    thick *= 1.35;
+    gap *= 1.25;
   }
 }
 
-/** A palm silhouette: curved trunk plus drooping fronds. */
-function palm(ctx, x, baseY, s, color) {
-  ctx.save();
+function gulls(ctx, rand, w, h, n, yTop, yBottom, color) {
   ctx.strokeStyle = color;
-  ctx.fillStyle = color;
-  ctx.lineWidth = 10 * s;
+  ctx.lineWidth = Math.max(2, w * 0.004);
   ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(x, baseY);
-  ctx.quadraticCurveTo(x + 26 * s, baseY - 90 * s, x + 8 * s, baseY - 170 * s);
-  ctx.stroke();
-  const topX = x + 8 * s;
-  const topY = baseY - 170 * s;
-  ctx.lineWidth = 7 * s;
-  for (let i = 0; i < 7; i++) {
-    const a = Math.PI * (0.08 + (i / 6) * 0.84);
-    const len = (52 + ((i * 37) % 26)) * s;
-    const ex = topX + Math.cos(a) * len;
-    const ey = topY + Math.sin(a) * len * 0.55 + 16 * s;
+  for (let i = 0; i < n; i++) {
+    const x = rand() * w;
+    const y = yTop + rand() * (yBottom - yTop);
+    const s = w * (0.012 + rand() * 0.02);
     ctx.beginPath();
-    ctx.moveTo(topX, topY);
-    ctx.quadraticCurveTo(topX + Math.cos(a) * len * 0.5, topY - 26 * s, ex, ey);
+    ctx.moveTo(x - s, y);
+    ctx.quadraticCurveTo(x - s * 0.4, y - s * 0.7, x, y);
+    ctx.quadraticCurveTo(x + s * 0.4, y - s * 0.7, x + s, y);
     ctx.stroke();
   }
-  ctx.restore();
 }
 
-/** A band of halftone dots growing toward one corner. */
-function halftoneBand(ctx, w, h, x0, y0, x1, y1, color) {
-  ctx.save();
+// A field of halftone dots, denser toward the bottom of the band.
+function halftone(ctx, rand, x, y, w, h, color, maxR) {
   ctx.fillStyle = color;
-  const gap = 26;
-  for (let y = y0; y < y1; y += gap) {
-    for (let x = x0; x < x1; x += gap) {
-      const t = (x - x0) / Math.max(1, x1 - x0) + (y1 - y) / Math.max(1, y1 - y0);
-      const r = Math.max(1.5, 5.5 * t * 0.5);
+  const step = Math.max(9, w * 0.018);
+  for (let yy = y + step / 2; yy < y + h; yy += step) {
+    const t = (yy - y) / h;
+    for (let xx = x + step / 2; xx < x + w; xx += step) {
+      const r = maxR * (0.25 + 0.75 * t) * (0.7 + rand() * 0.6);
       ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.arc(xx, yy, r, 0, Math.PI * 2);
       ctx.fill();
     }
   }
-  ctx.restore();
 }
 
-/** Diagonal speed lines, comic style. */
-function speedLines(ctx, w, h, color, n) {
-  ctx.save();
-  ctx.strokeStyle = color;
-  ctx.lineCap = 'round';
-  for (let i = 0; i < n; i++) {
-    ctx.lineWidth = 5 + i;
-    const y = h * (0.06 + i * 0.03);
-    ctx.beginPath();
-    ctx.moveTo(w * 0.04, y);
-    ctx.lineTo(w * (0.14 + i * 0.014), y - h * 0.014);
-    ctx.stroke();
-  }
-  ctx.restore();
+function towerBlock(ctx, x, yBase, w, h, color) {
+  ctx.fillStyle = color;
+  ctx.fillRect(x, yBase - h, w, h);
 }
 
-function gull(ctx, x, y, s, color) {
-  ctx.save();
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 4 * s;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(x - 14 * s, y);
-  ctx.quadraticCurveTo(x - 5 * s, y - 9 * s, x, y);
-  ctx.quadraticCurveTo(x + 5 * s, y - 9 * s, x + 14 * s, y);
-  ctx.stroke();
-  ctx.restore();
-}
-
-function drawBoulevard(ctx, w, h, rand) {
-  sky(ctx, w, h, [[0, '#2b1a5e'], [0.45, '#c22a6e'], [0.75, '#ff7a1a'], [1, '#ffd400']]);
-  synthSun(ctx, w * 0.5, h * 0.42, w * 0.22);
-  halftoneBand(ctx, w, h, w * 0.66, 0, w, h * 0.3, 'rgba(17,17,17,0.5)');
-  speedLines(ctx, w, h, '#111', 4);
-  skyline(ctx, w, h * 0.72, h * 0.34, '#1d1040', rand, true);
-  gull(ctx, w * 0.2, h * 0.2, 1, '#111');
-  gull(ctx, w * 0.3, h * 0.15, 0.7, '#111');
-  palm(ctx, w * 0.12, h * 0.98, 1.1, '#12082b');
-  palm(ctx, w * 0.88, h * 0.98, 0.9, '#12082b');
-  // The boulevard: dark asphalt with a perspective centre line.
-  ctx.fillStyle = '#171226';
-  ctx.beginPath();
-  ctx.moveTo(0, h);
-  ctx.lineTo(w * 0.34, h * 0.72);
-  ctx.lineTo(w * 0.66, h * 0.72);
-  ctx.lineTo(w, h);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = '#ffd400';
-  ctx.lineWidth = 8;
-  ctx.setLineDash([34, 26]);
-  ctx.beginPath();
-  ctx.moveTo(w * 0.5, h * 0.74);
-  ctx.lineTo(w * 0.5, h);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.strokeStyle = '#fff';
-  ctx.lineWidth = 5;
-  ctx.beginPath();
-  ctx.moveTo(w * 0.34, h * 0.72);
-  ctx.lineTo(0, h);
-  ctx.moveTo(w * 0.66, h * 0.72);
-  ctx.lineTo(w, h);
-  ctx.stroke();
-}
-
-function drawPier(ctx, w, h, rand) {
-  sky(ctx, w, h, [[0, '#0e5f7a'], [0.5, '#37b6c9'], [0.8, '#ffd9a0'], [1, '#ff9d5c']]);
-  sunDisc(ctx, w * 0.72, h * 0.3, w * 0.13, '#fff3c4');
-  ctx.save();
-  ctx.strokeStyle = '#111';
-  ctx.lineWidth = 5;
-  ctx.beginPath();
-  ctx.arc(w * 0.72, h * 0.3, w * 0.13, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.restore();
-  gull(ctx, w * 0.22, h * 0.16, 1, '#111');
-  gull(ctx, w * 0.34, h * 0.22, 0.7, '#111');
-  gull(ctx, w * 0.14, h * 0.28, 0.55, '#111');
-  skyline(ctx, w, h * 0.58, h * 0.4, '#14324a', rand, false);
-  // The sea: stacked wave strokes.
-  for (let i = 0; i < 9; i++) {
-    const y = h * (0.6 + i * 0.045);
-    ctx.strokeStyle = i % 2 ? 'rgba(255,255,255,0.55)' : 'rgba(14,95,122,0.6)';
-    ctx.lineWidth = 7;
-    ctx.beginPath();
-    for (let x = 0; x <= w; x += 24) {
-      const yy = y + Math.sin((x / w) * Math.PI * 3 + i) * 7;
-      if (x === 0) ctx.moveTo(x, yy);
-      else ctx.lineTo(x, yy);
+function litWindows(ctx, rand, x, yBase, w, h, cols, rows, lit) {
+  const cw = w / cols;
+  const ch = h / rows;
+  for (let c = 0; c < cols; c++) {
+    for (let r = 0; r < rows; r++) {
+      if (rand() > lit) continue;
+      ctx.fillStyle = rand() > 0.75 ? '#ffd166' : '#ffe9a8';
+      ctx.fillRect(x + c * cw + cw * 0.22, yBase - h + r * ch + ch * 0.25, cw * 0.56, ch * 0.5);
     }
-    ctx.stroke();
   }
-  // The pier deck, boards in perspective toward the horizon.
-  ctx.fillStyle = '#7a4a21';
-  ctx.beginPath();
-  ctx.moveTo(w * 0.3, h * 0.62);
-  ctx.lineTo(w * 0.7, h * 0.62);
-  ctx.lineTo(w, h);
-  ctx.lineTo(0, h);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = '#4a2c10';
-  ctx.lineWidth = 4;
-  for (let i = 0; i < 8; i++) {
-    const t = i / 7;
-    const y = h * (0.62 + t * 0.38);
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(w, y);
-    ctx.stroke();
-  }
-  ctx.strokeStyle = '#4a2c10';
-  ctx.beginPath();
-  ctx.moveTo(w * 0.3, h * 0.62);
-  ctx.lineTo(0, h);
-  ctx.moveTo(w * 0.7, h * 0.62);
-  ctx.lineTo(w, h);
-  ctx.stroke();
-  ctx.fillStyle = '#5d3a17';
-  for (const [px, ph] of [[0.3, 0.62], [0.7, 0.62]]) {
-    ctx.fillRect(w * px - 14, h * ph - 60, 28, 60);
-  }
-  ctx.fillStyle = '#ffd400';
-  ctx.beginPath();
-  ctx.arc(w * 0.5, h * 0.56, 10, 0, Math.PI * 2);
-  ctx.fill();
 }
 
-function drawRooftop(ctx, w, h, rand) {
-  sky(ctx, w, h, [[0, '#0b0b2e'], [0.55, '#3b1d5e'], [0.85, '#c22a6e'], [1, '#ff7a1a']]);
-  for (let i = 0; i < 90; i++) {
-    const x = rand() * w;
-    const y = rand() * h * 0.5;
-    const r = 1 + rand() * 2.4;
-    ctx.fillStyle = `rgba(255,255,255,${0.35 + rand() * 0.6})`;
+function palm(ctx, x, yBase, s, color) {
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = Math.max(3, s * 0.05);
+  ctx.beginPath();
+  ctx.moveTo(x, yBase);
+  ctx.quadraticCurveTo(x + s * 0.08, yBase - s * 0.55, x + s * 0.02, yBase - s);
+  ctx.stroke();
+  const topX = x + s * 0.02;
+  const topY = yBase - s;
+  for (let i = 0; i < 6; i++) {
+    const a = (-0.15 - i * 0.28) * Math.PI;
+    const len = s * (0.42 + (i % 2) * 0.1);
     ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.moveTo(topX, topY);
+    ctx.quadraticCurveTo(
+      topX + Math.cos(a) * len * 0.6, topY + Math.sin(a) * len * 0.5 - s * 0.08,
+      topX + Math.cos(a) * len, topY + Math.sin(a) * len * 0.85,
+    );
+    ctx.stroke();
+  }
+  disc(ctx, topX - s * 0.03, topY + s * 0.05, s * 0.05, color);
+  disc(ctx, topX + s * 0.05, topY + s * 0.06, s * 0.045, color);
+}
+
+// ---- Scene 1: Dockside Dawn -------------------------------------------
+function paintDockside(ctx, w, h) {
+  const rand = seeded(20261120);
+  sky(ctx, w, h, [[0, '#2b1055'], [0.42, '#7597de'], [0.62, '#ff9a5a'], [0.78, '#ff5e62'], [1, '#1d1b3a']]);
+  slitSun(ctx, w * 0.5, h * 0.52, h * 0.2, '#ffd166', '#ff5e62');
+  halftone(ctx, rand, 0, 0, w, h * 0.3, 'rgba(255,255,255,0.16)', Math.max(2, w * 0.006));
+  gulls(ctx, rand, w, h, 7, h * 0.08, h * 0.3, 'rgba(20,16,40,0.85)');
+  // Far cranes.
+  ctx.strokeStyle = '#241a3d';
+  ctx.fillStyle = '#241a3d';
+  ctx.lineWidth = Math.max(4, w * 0.008);
+  const horizon = h * 0.66;
+  for (const [cx, s] of [[w * 0.16, 1], [w * 0.82, 0.85]]) {
+    const top = horizon - h * 0.34 * s;
+    ctx.beginPath();
+    ctx.moveTo(cx - w * 0.012, horizon);
+    ctx.lineTo(cx - w * 0.012, top);
+    ctx.moveTo(cx + w * 0.012, horizon);
+    ctx.lineTo(cx + w * 0.012, top);
+    ctx.moveTo(cx - w * 0.09, top + h * 0.05 * s);
+    ctx.lineTo(cx + w * 0.13, top - h * 0.03 * s);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx - w * 0.09, top + h * 0.05 * s);
+    ctx.lineTo(cx + w * 0.02, top + h * 0.02 * s);
+    ctx.lineTo(cx + w * 0.02, top + h * 0.07 * s);
+    ctx.closePath();
     ctx.fill();
   }
-  sunDisc(ctx, w * 0.78, h * 0.2, w * 0.11, '#fff3c4');
-  ctx.save();
-  ctx.strokeStyle = '#111';
-  ctx.lineWidth = 5;
-  ctx.beginPath();
-  ctx.arc(w * 0.78, h * 0.2, w * 0.11, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.restore();
-  skyline(ctx, w, h * 0.66, h * 0.42, '#160b33', rand, true);
-  halftoneBand(ctx, w, h, 0, h * 0.1, w * 0.3, h * 0.34, 'rgba(255,255,255,0.35)');
-  // The rooftop in the foreground: ledge, water tower, antenna.
-  ctx.fillStyle = '#0d071f';
-  ctx.fillRect(0, h * 0.66, w, h * 0.34);
-  ctx.fillStyle = '#1d1040';
-  ctx.fillRect(w * 0.1, h * 0.5, w * 0.16, h * 0.16);
-  ctx.beginPath();
-  ctx.moveTo(w * 0.08, h * 0.5);
-  ctx.lineTo(w * 0.18, h * 0.44);
-  ctx.lineTo(w * 0.28, h * 0.5);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = '#ffd400';
-  for (let wy = h * 0.53; wy < h * 0.63; wy += 22) {
-    for (let wx = w * 0.12; wx < w * 0.24; wx += 22) {
-      if (rand() < 0.5) ctx.fillRect(wx, wy, 8, 11);
+  // Container stacks.
+  const palette = ['#ff5e62', '#2ec4b6', '#ffd166', '#e07a5f', '#4cc9f0'];
+  let cx = w * 0.03;
+  while (cx < w * 0.97) {
+    const bw = w * (0.09 + rand() * 0.06);
+    const rows = 1 + Math.floor(rand() * 3);
+    for (let r = 0; r < rows; r++) {
+      ctx.fillStyle = palette[Math.floor(rand() * palette.length)];
+      ctx.fillRect(cx, horizon - (r + 1) * h * 0.055, bw, h * 0.05);
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.fillRect(cx, horizon - (r + 1) * h * 0.055, bw, h * 0.012);
     }
+    cx += bw + w * 0.015;
   }
-  ctx.strokeStyle = '#0d071f';
-  ctx.lineWidth = 8;
-  ctx.beginPath();
-  ctx.moveTo(w * 0.78, h * 0.66);
-  ctx.lineTo(w * 0.78, h * 0.34);
-  ctx.stroke();
-  ctx.strokeStyle = '#0d071f';
-  ctx.lineWidth = 5;
-  ctx.beginPath();
-  ctx.moveTo(w * 0.78, h * 0.4);
-  ctx.lineTo(w * 0.7, h * 0.46);
-  ctx.moveTo(w * 0.78, h * 0.4);
-  ctx.lineTo(w * 0.86, h * 0.46);
-  ctx.stroke();
-  ctx.fillStyle = '#e63329';
-  ctx.beginPath();
-  ctx.arc(w * 0.78, h * 0.33, 9, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = '#fff';
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.arc(w * 0.78, h * 0.33, 14, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-  ctx.lineWidth = 4;
-  for (let i = 0; i < 5; i++) {
-    const y = h * (0.7 + i * 0.05);
-    ctx.beginPath();
-    ctx.moveTo(w * (0.42 + (i % 2) * 0.05), y);
-    ctx.lineTo(w * (0.58 - (i % 2) * 0.05), y);
-    ctx.stroke();
+  // Water with a sun reflection.
+  const wg = ctx.createLinearGradient(0, horizon, 0, h);
+  wg.addColorStop(0, '#3a2b5c');
+  wg.addColorStop(1, '#120e26');
+  ctx.fillStyle = wg;
+  ctx.fillRect(0, horizon, w, h - horizon);
+  for (let i = 0; i < 26; i++) {
+    const y = horizon + (h - horizon) * (i / 26) + rand() * 4;
+    const ww = w * (0.1 + rand() * 0.3) * (1 - i / 40);
+    ctx.fillStyle = `rgba(255, 209, 102, ${0.5 - i * 0.015})`;
+    ctx.fillRect(w * 0.5 - ww / 2, y, ww, Math.max(2, h * 0.006));
   }
 }
 
-const DRAWERS = { boulevard: drawBoulevard, pier: drawPier, rooftop: drawRooftop };
-const SEEDS = { boulevard: 20261120, pier: 777, rooftop: 4242 };
+// ---- Scene 2: Neon Downtown -------------------------------------------
+function paintDowntown(ctx, w, h) {
+  const rand = seeded(770031);
+  sky(ctx, w, h, [[0, '#070b1e'], [0.55, '#141b3d'], [0.8, '#3b2a63'], [1, '#120e26']]);
+  // Stars.
+  for (let i = 0; i < 90; i++) {
+    ctx.fillStyle = `rgba(255,255,255,${0.25 + rand() * 0.6})`;
+    const r = rand() * 1.8 + 0.6;
+    ctx.beginPath();
+    ctx.arc(rand() * w, rand() * h * 0.45, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Moon + halo.
+  const mx = w * 0.76;
+  const my = h * 0.2;
+  const halo = ctx.createRadialGradient(mx, my, 0, mx, my, h * 0.22);
+  halo.addColorStop(0, 'rgba(255, 240, 200, 0.5)');
+  halo.addColorStop(1, 'rgba(255, 240, 200, 0)');
+  ctx.fillStyle = halo;
+  ctx.fillRect(mx - h * 0.22, my - h * 0.22, h * 0.44, h * 0.44);
+  disc(ctx, mx, my, h * 0.085, '#ffefc4');
+  ctx.fillStyle = 'rgba(190,170,130,0.55)';
+  disc(ctx, mx - h * 0.03, my - h * 0.02, h * 0.016, 'rgba(190,170,130,0.55)');
+  disc(ctx, mx + h * 0.025, my + h * 0.03, h * 0.011, 'rgba(190,170,130,0.55)');
+  // Searchlights.
+  const baseY = h * 0.86;
+  for (const [bx, tilt] of [[w * 0.2, -0.5], [w * 0.34, -0.28]]) {
+    const grad = ctx.createLinearGradient(bx, baseY, bx + Math.sin(tilt) * h * 0.9, baseY - Math.cos(tilt) * h * 0.9);
+    grad.addColorStop(0, 'rgba(255, 244, 200, 0.34)');
+    grad.addColorStop(1, 'rgba(255, 244, 200, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(bx, baseY);
+    ctx.lineTo(bx + Math.sin(tilt) * h * 0.9 - w * 0.03, baseY - Math.cos(tilt) * h * 0.9);
+    ctx.lineTo(bx + Math.sin(tilt) * h * 0.9 + w * 0.03, baseY - Math.cos(tilt) * h * 0.9);
+    ctx.closePath();
+    ctx.fill();
+  }
+  // Towers with lit windows.
+  const towers = [
+    [0.02, 0.62, 0.16, 0.62], [0.2, 0.5, 0.14, 0.74], [0.36, 0.58, 0.18, 0.66],
+    [0.56, 0.44, 0.13, 0.8], [0.71, 0.56, 0.15, 0.68], [0.88, 0.48, 0.12, 0.76],
+  ];
+  for (const [fx, fh, fw, lit] of towers) {
+    const x = w * fx;
+    const tw = w * fw;
+    const th = h * fh;
+    towerBlock(ctx, x, baseY, tw, th, '#0b1026');
+    ctx.fillStyle = '#0b1026';
+    ctx.fillRect(x - tw * 0.06, baseY - th - h * 0.02, tw * 1.12, h * 0.02);
+    litWindows(ctx, rand, x, baseY, tw, th, 5, Math.max(6, Math.floor(th / (h * 0.045))), lit);
+  }
+  // Rooftop: water tower + antenna.
+  ctx.fillStyle = '#0b1026';
+  ctx.fillRect(0, baseY, w, h - baseY);
+  const wx = w * 0.6;
+  ctx.fillRect(wx, baseY - h * 0.1, w * 0.05, h * 0.1);
+  ctx.beginPath();
+  ctx.moveTo(wx - w * 0.008, baseY - h * 0.1);
+  ctx.lineTo(wx + w * 0.025, baseY - h * 0.14);
+  ctx.lineTo(wx + w * 0.058, baseY - h * 0.1);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#0b1026';
+  ctx.lineWidth = Math.max(3, w * 0.005);
+  ctx.beginPath();
+  ctx.moveTo(w * 0.72, baseY);
+  ctx.lineTo(w * 0.72, baseY - h * 0.16);
+  ctx.stroke();
+  disc(ctx, w * 0.72, baseY - h * 0.17, Math.max(3, w * 0.006), '#ff5e62');
+  halftone(ctx, rand, 0, h * 0.4, w, h * 0.12, 'rgba(255, 94, 98, 0.25)', Math.max(2, w * 0.005));
+}
 
-/**
- * Draws one named sample scene and returns its canvas, ready to drop into a
- * panel exactly like an uploaded photo. Unknown names fall back to boulevard.
- */
-export function makeSampleScene(name) {
-  const key = DRAWERS[name] ? name : 'boulevard';
-  const canvas = makeCanvas(960, 1200);
+// ---- Scene 3: Getaway --------------------------------------------------
+function paintGetaway(ctx, w, h) {
+  const rand = seeded(99173);
+  sky(ctx, w, h, [[0, '#ff9a5a'], [0.45, '#ff5e62'], [0.7, '#8338ec'], [1, '#1d1b3a']]);
+  slitSun(ctx, w * 0.68, h * 0.34, h * 0.17, '#ffe9a8', '#ff5e62');
+  gulls(ctx, rand, w, h, 5, h * 0.06, h * 0.22, 'rgba(20,16,40,0.8)');
+  // Far skyline.
+  ctx.fillStyle = '#2a1b4d';
+  let x = -w * 0.02;
+  while (x < w) {
+    const bw = w * (0.06 + rand() * 0.09);
+    const bh = h * (0.1 + rand() * 0.16);
+    ctx.fillRect(x, h * 0.62 - bh, bw, bh);
+    x += bw + w * 0.01;
+  }
+  // Road in perspective.
+  const horizon = h * 0.62;
+  ctx.fillStyle = '#171226';
+  ctx.beginPath();
+  ctx.moveTo(w * 0.42, horizon);
+  ctx.lineTo(w * 0.58, horizon);
+  ctx.lineTo(w, h);
+  ctx.lineTo(0, h);
+  ctx.closePath();
+  ctx.fill();
+  // Lane dashes.
+  ctx.fillStyle = '#ffd166';
+  for (let i = 0; i < 7; i++) {
+    const t = i / 7;
+    const y = horizon + (h - horizon) * t * t;
+    const next = horizon + (h - horizon) * ((i + 1) / 7) * ((i + 1) / 7);
+    const cx = w * 0.5;
+    const spread = w * 0.02 + t * w * 0.05;
+    ctx.fillRect(cx - spread / 2, y, spread, Math.max(2, (next - y) * 0.45));
+  }
+  // Headlight cones from the car.
+  const carX = w * 0.5;
+  const carY = h * 0.86;
+  for (const dir of [-1, 1]) {
+    const grad = ctx.createLinearGradient(carX + dir * w * 0.05, carY, carX + dir * w * 0.34, carY + h * 0.06);
+    grad.addColorStop(0, 'rgba(255, 240, 180, 0.5)');
+    grad.addColorStop(1, 'rgba(255, 240, 180, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(carX + dir * w * 0.05, carY - h * 0.01);
+    ctx.lineTo(carX + dir * w * 0.34, carY + h * 0.03);
+    ctx.lineTo(carX + dir * w * 0.34, carY + h * 0.08);
+    ctx.lineTo(carX + dir * w * 0.05, carY + h * 0.015);
+    ctx.closePath();
+    ctx.fill();
+  }
+  // The getaway car, side view.
+  ctx.fillStyle = '#0d0a1a';
+  ctx.beginPath();
+  ctx.moveTo(carX - w * 0.17, carY + h * 0.045);
+  ctx.lineTo(carX - w * 0.17, carY + h * 0.005);
+  ctx.lineTo(carX - w * 0.1, carY - h * 0.01);
+  ctx.lineTo(carX - w * 0.04, carY - h * 0.045);
+  ctx.lineTo(carX + w * 0.07, carY - h * 0.045);
+  ctx.lineTo(carX + w * 0.13, carY - h * 0.008);
+  ctx.lineTo(carX + w * 0.17, carY + h * 0.005);
+  ctx.lineTo(carX + w * 0.17, carY + h * 0.045);
+  ctx.closePath();
+  ctx.fill();
+  // Windows, wheels, neon underglow.
+  ctx.fillStyle = '#7ee8fa';
+  ctx.beginPath();
+  ctx.moveTo(carX - w * 0.085, carY - h * 0.012);
+  ctx.lineTo(carX - w * 0.045, carY - h * 0.038);
+  ctx.lineTo(carX + w * 0.06, carY - h * 0.038);
+  ctx.lineTo(carX + w * 0.105, carY - h * 0.012);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#ff2e88';
+  ctx.fillRect(carX - w * 0.17, carY + h * 0.045, w * 0.34, h * 0.008);
+  for (const wx of [carX - w * 0.105, carX + w * 0.105]) {
+    disc(ctx, wx, carY + h * 0.045, h * 0.028, '#0d0a1a');
+    ctx.strokeStyle = '#e8e8e8';
+    ctx.lineWidth = Math.max(2, h * 0.004);
+    ctx.beginPath();
+    ctx.arc(wx, carY + h * 0.045, h * 0.014, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  // Speed lines.
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.lineWidth = Math.max(2, h * 0.004);
+  for (let i = 0; i < 9; i++) {
+    const y = h * (0.68 + rand() * 0.2);
+    const x0 = rand() * w * 0.3;
+    const len = w * (0.08 + rand() * 0.16);
+    ctx.beginPath();
+    ctx.moveTo(x0, y);
+    ctx.lineTo(x0 + len, y);
+    ctx.stroke();
+  }
+  // Palms framing the road.
+  palm(ctx, w * 0.07, h * 0.99, h * 0.3, '#0d0a1a');
+  palm(ctx, w * 0.93, h * 0.99, h * 0.24, '#0d0a1a');
+  // Neon billboard.
+  ctx.fillStyle = '#ff2e88';
+  ctx.fillRect(w * 0.78, h * 0.42, w * 0.16, h * 0.09);
+  ctx.strokeStyle = '#ffe9a8';
+  ctx.lineWidth = Math.max(2, w * 0.003);
+  ctx.strokeRect(w * 0.79, h * 0.435, w * 0.14, h * 0.06);
+  ctx.fillStyle = '#ffe9a8';
+  ctx.font = `900 ${Math.round(h * 0.035)}px "Arial Black", "Noto Sans Display", "Liberation Sans", Arial, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('VICE CITY', w * 0.86, h * 0.465);
+}
+
+// Paint one scene onto any canvas (its own size is used).
+export function paintScene(canvas, id) {
   const ctx = canvas.getContext('2d');
-  DRAWERS[key](ctx, canvas.width, canvas.height, rng(SEEDS[key]));
+  const w = canvas.width;
+  const h = canvas.height;
+  if (id === 'dockside') paintDockside(ctx, w, h);
+  else if (id === 'downtown') paintDowntown(ctx, w, h);
+  else if (id === 'getaway') paintGetaway(ctx, w, h);
+  else paintDockside(ctx, w, h);
   return canvas;
+}
+
+// A fresh canvas holding one scene, at the requested pixel size.
+export function sceneCanvas(id, w, h) {
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  return paintScene(c, id);
 }
