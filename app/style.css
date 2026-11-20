@@ -1,20 +1,11 @@
-/* Loading Screen Comic — thick black outlines, flat yellow/red, hard shadows. */
-@font-face {
-  font-family: 'Bangers';
-  src: url('./fonts/Bangers-Regular.ttf') format('truetype');
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Anton';
-  src: url('./fonts/Anton-Regular.ttf') format('truetype');
-  font-display: swap;
-}
-
-html, body { margin: 0; min-height: 100%; background: #ffd400; color: #111; font: 15px/1.45 'Anton', system-ui, sans-serif; }
+/* Loading Screen Comic — thick black outlines, flat yellow/red, hard shadows.
+   Lettering uses the machine's own heavy sans (Arial Black on desktop,
+   Liberation Sans Bold on Linux) — no font files are shipped. */
+html, body { margin: 0; min-height: 100%; background: #ffd400; color: #111; font: 600 15px/1.45 "Arial Narrow", "Liberation Sans", Arial, sans-serif; }
 .app { display: flex; gap: 28px; align-items: flex-start; justify-content: center; padding: 22px; box-sizing: border-box; }
 .controls { width: 330px; flex: none; display: flex; flex-direction: column; gap: 16px; }
 .controls h1 {
-  margin: 0; font-family: 'Bangers', 'Anton', sans-serif; font-size: 46px; line-height: 0.95;
+  margin: 0; font-family: "Arial Black", "Liberation Sans", Arial, sans-serif; font-weight: 900; font-size: 46px; line-height: 0.95;
   letter-spacing: 1px; color: #111; text-shadow: 3px 3px 0 #e63329, 6px 6px 0 #fff;
 }
 .tag { margin: 0; font-size: 14px; }
@@ -22,7 +13,7 @@ fieldset {
   margin: 0; padding: 14px; border: 3px solid #111; border-radius: 10px;
   background: #fff; box-shadow: 6px 6px 0 #111; display: flex; flex-direction: column; gap: 10px;
 }
-legend { font-family: 'Bangers', sans-serif; font-size: 20px; letter-spacing: 1px; padding: 0 8px; background: #111; color: #ffd400; border-radius: 6px; }
+legend { font-family: "Arial Black", "Liberation Sans", Arial, sans-serif; font-weight: 900; font-size: 20px; letter-spacing: 1px; padding: 0 8px; background: #111; color: #ffd400; border-radius: 6px; }
 label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; letter-spacing: 0.5px; }
 label.check { flex-direction: row; align-items: center; gap: 8px; }
 input[type=text], select {
@@ -34,7 +25,7 @@ input[type=range] { accent-color: #e63329; }
 .slot { display: flex; align-items: center; gap: 8px; }
 .slot-name {
   width: 26px; height: 26px; flex: none; display: grid; place-items: center;
-  background: #111; color: #ffd400; font-family: 'Bangers', sans-serif; font-size: 18px; border-radius: 50%;
+  background: #111; color: #ffd400; font-family: "Arial Black", "Liberation Sans", Arial, sans-serif; font-weight: 900; font-size: 18px; border-radius: 50%;
 }
 .thumb { width: 52px; height: 52px; object-fit: cover; border: 2px solid #111; border-radius: 6px; background: #eee; }
 .file-btn, .sample-btn {
@@ -50,7 +41,7 @@ input[type=range] { accent-color: #e63329; }
 }
 .panel-tab[aria-selected="true"] { background: #e63329; color: #fff; }
 #export {
-  font-family: 'Bangers', sans-serif; font-size: 26px; letter-spacing: 2px; padding: 10px;
+  font-family: "Arial Black", "Liberation Sans", Arial, sans-serif; font-weight: 900; font-size: 26px; letter-spacing: 2px; padding: 10px;
   border: 3px solid #111; border-radius: 8px; background: #e63329; color: #fff; cursor: pointer;
   box-shadow: 5px 5px 0 #111;
 }

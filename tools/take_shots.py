@@ -1,8 +1,8 @@
-"""Takes the entry's screenshots with headless Chromium (Playwright):
-- export shots: opens the ?shot=cover scene, clicks EXPORT, captures the real
-  PNG the app wrote, scales it down to the gate limits with Pillow.
-- editor shot: screenshots the live editor page with a photo loaded.
-Reads shots.json for scenes; writes into screenshots/."""
+"""Takes this entry's screenshots with headless Chromium (Playwright):
+- export scenes open the ?shot=cover page, press EXPORT, and keep the real PNG
+  the app wrote, shrunk to the gate limits with Pillow;
+- the editor scene screenshots the live editor page with scenes loaded.
+Scenes come from shots.json; files land in screenshots/."""
 import json
 import os
 import subprocess
@@ -18,7 +18,8 @@ BASE = f"http://localhost:{PORT}/index.html"
 TMP = "/tmp/zech-gta6-shots"
 os.makedirs(TMP, exist_ok=True)
 
-LIMITS = {  # name -> (max_w, max_h)
+# name -> (long side max, short side max) after scaling.
+LIMITS = {
     "1-cover.jpg": (1280, 720),
     "2-editor.jpg": (1280, 1280),
     "3-cover.jpg": (1024, 1280),
@@ -27,8 +28,10 @@ LIMITS = {  # name -> (max_w, max_h)
 
 
 def save_jpeg(src_path, dst_path, max_w, max_h):
+    """Shrinks an image to the limits and saves it as a JPEG under 256 KiB."""
     img = Image.open(src_path).convert("RGB")
     img.thumbnail((max_w, max_h), Image.LANCZOS)
+    quality = 88
     for quality in (88, 82, 75, 68):
         img.save(dst_path, "JPEG", quality=quality, optimize=True)
         if os.path.getsize(dst_path) <= 256 * 1024:
@@ -38,6 +41,13 @@ def save_jpeg(src_path, dst_path, max_w, max_h):
           f"{os.path.getsize(dst_path)} bytes (q={quality})")
     assert os.path.getsize(dst_path) <= 256 * 1024, "over 256 KiB"
     assert max(final.size) <= 1280 and min(final.size) >= 480, "size gate"
+
+
+def shoot_scene(page, scene):
+    """Opens one scene and returns when the app signals it is painted."""
+    page.goto(BASE + scene["query"])
+    page.wait_for_function("window.__shotReady === true", timeout=20000)
+    page.wait_for_timeout(400)
 
 
 def main():
@@ -52,12 +62,11 @@ def main():
             browser = pw.chromium.launch()
             for scene in scenes:
                 name = scene["name"]
+                print(f"scene {name}: {scene['query']}")
                 page = browser.new_page(viewport={"width": scene["w"], "height": scene["h"]})
                 page.on("console", lambda m: print(f"  console [{m.type}]: {m.text}") if m.type in ("error", "warning") else None)
                 page.on("pageerror", lambda e: print(f"  pageerror: {e}"))
-                page.goto(BASE + scene["query"])
-                page.wait_for_function("window.__shotReady === true", timeout=20000)
-                page.wait_for_timeout(400)
+                shoot_scene(page, scene)
                 max_w, max_h = LIMITS[name]
                 if scene.get("export"):
                     with page.expect_download(timeout=15000) as dl:

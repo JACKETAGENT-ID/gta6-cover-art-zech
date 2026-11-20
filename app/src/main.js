@@ -1,16 +1,20 @@
 // Wires the Loading Screen Comic editor: photo slots, panel controls, caption,
 // size and export. The preview canvas is always rendered at the exact export
 // size, so what you see is what the PNG will be. A `?shot=` query sets up a
-// fixed scene for a screenshot instead (./shots.js).
-import { drawCover, defaultState, SIZES, LAYOUTS, SAMPLE_FILES } from './cover.js';
+// fixed scene for a screenshot instead (./shots.js). The built-in sample
+// photos are scenes drawn live on canvas (./samples.js) — no image files.
+import { drawCover, defaultState, SIZES, LAYOUTS } from './cover.js';
+import { makeSampleScene, SAMPLE_SCENES } from './samples.js';
 import { runShot } from './shots.js';
+
+// Slot A/B/C each start on one of the three drawn scenes.
+const SLOT_SCENES = { A: 'boulevard', B: 'pier', C: 'rooftop' };
 
 const $ = (id) => document.getElementById(id);
 const preview = $('preview');
 const status = $('status');
 const state = defaultState();
 let activePanel = 0;
-let fontsReady = false;
 
 /** Loads an image from a URL, resolving once it can be drawn. */
 export function loadImage(url) {
@@ -31,11 +35,13 @@ function redraw() {
   drawCover(preview, state);
 }
 
+/** Thumbnails show uploaded photos by URL and drawn scenes via data URL. */
 function refreshThumbs() {
   for (const slot of ['A', 'B', 'C']) {
     const img = document.querySelector(`.slot[data-slot="${slot}"] .thumb`);
     const photo = state.photos[slot];
-    if (photo) img.src = photo.src;
+    if (!photo) continue;
+    img.src = photo instanceof HTMLCanvasElement ? photo.toDataURL() : photo.src;
   }
 }
 
@@ -75,15 +81,15 @@ function bindPanelControl(id, apply) {
   });
 }
 
-async function loadSample(slot) {
-  const img = await loadImage(`samples/${SAMPLE_FILES[slot]}`);
-  state.photos[slot] = img;
+/** Puts a freshly drawn sample scene into one slot. */
+function loadSample(slot) {
+  state.photos[slot] = makeSampleScene(SLOT_SCENES[slot]);
   refreshThumbs();
   redraw();
 }
 
-async function loadAllSamples() {
-  await Promise.all(['A', 'B', 'C'].map(loadSample));
+function loadAllSamples() {
+  for (const slot of ['A', 'B', 'C']) loadSample(slot);
 }
 
 /** Public handle the screenshot scenes use. */
@@ -94,6 +100,9 @@ export const app = {
   loadAllSamples,
   buildPanelTabs,
   syncPanelControls,
+  sampleNames() {
+    return Object.keys(SAMPLE_SCENES);
+  },
   setCaption(text) {
     state.caption = text;
     $('caption').value = text;
@@ -111,20 +120,6 @@ export const app = {
   setSize(size) {
     state.size = size;
     $('size').value = size;
-  },
-  async fonts() {
-    if (!fontsReady) {
-      try {
-        await Promise.all([
-          document.fonts.load('80px Bangers'),
-          document.fonts.load('40px Anton'),
-          document.fonts.ready,
-        ]);
-      } catch {
-        // System fallback fonts still draw the cover.
-      }
-      fontsReady = true;
-    }
   },
 };
 
@@ -198,7 +193,6 @@ if (shot) {
 } else {
   buildPanelTabs();
   syncPanelControls();
-  await app.fonts();
-  await loadAllSamples();
+  loadAllSamples();
   redraw();
 }

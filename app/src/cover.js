@@ -10,7 +10,11 @@ export const SIZES = {
 
 export const LAYOUTS = { duo: 2, triple: 3, solo: 1 };
 
-export const SAMPLE_FILES = { A: 'boulevard.jpg', B: 'pier.jpg', C: 'rooftop.jpg' };
+// System font stacks — no font files are shipped. The display face is the
+// heaviest sans on the machine (Arial Black on desktop, Liberation Sans Bold
+// on Linux), the label face a condensed-feel sans at weight 700.
+export const DISPLAY_FONT = '"Arial Black", "Liberation Sans", Arial, sans-serif';
+export const LABEL_FONT = '"Arial Narrow", "Liberation Sans", Arial, sans-serif';
 
 const YELLOW = '#ffd400';
 const RED = '#e63329';
@@ -67,13 +71,19 @@ function tracePoly(ctx, poly, w, h) {
   ctx.closePath();
 }
 
-/** Draws one photo cover-fit inside a panel polygon, with zoom and pan. */
+/**
+ * Draws one photo cover-fit inside a panel polygon, with zoom and pan.
+ * `img` is an uploaded Image or a sample scene canvas — canvases carry
+ * width/height where images carry naturalWidth/naturalHeight.
+ */
 function drawPanelPhoto(ctx, img, poly, transform, w, h) {
   const box = polyBox(poly, w, h);
-  const base = Math.max(box.w / img.naturalWidth, box.h / img.naturalHeight);
+  const iw = img.naturalWidth || img.width;
+  const ih = img.naturalHeight || img.height;
+  const base = Math.max(box.w / iw, box.h / ih);
   const scale = base * transform.zoom;
-  const pw = img.naturalWidth * scale;
-  const ph = img.naturalHeight * scale;
+  const pw = iw * scale;
+  const ph = ih * scale;
   const cx = box.x + box.w / 2 + transform.ox * box.w;
   const cy = box.y + box.h / 2 + transform.oy * box.h;
   ctx.save();
@@ -153,7 +163,7 @@ function drawStarburst(ctx, w, h, word) {
   ctx.lineJoin = 'round';
   ctx.stroke();
   ctx.fillStyle = WHITE;
-  ctx.font = `${Math.round(r * 0.52)}px Bangers, 'Anton', sans-serif`;
+  ctx.font = `900 ${Math.round(r * 0.52)}px ${DISPLAY_FONT}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(word, 0, r * 0.05);
@@ -187,7 +197,7 @@ function drawCaption(ctx, caption, w, h) {
   ctx.lineJoin = 'round';
   let lines = [];
   while (size > 28) {
-    ctx.font = `${size}px Bangers, 'Anton', sans-serif`;
+    ctx.font = `900 ${size}px ${DISPLAY_FONT}`;
     lines = wrapCaption(ctx, text, w * 0.8);
     const widest = Math.max(...lines.map((l) => ctx.measureText(l).width));
     // Leave room for the thick outline and the slight tilt.
@@ -204,7 +214,7 @@ function drawCaption(ctx, caption, w, h) {
   ctx.translate(-w / 2, -(blockTop + blockH / 2));
   lines.forEach((line, i) => {
     const y = blockTop + i * lineH + lineH * 0.78;
-    ctx.font = `${size}px Bangers, 'Anton', sans-serif`;
+    ctx.font = `900 ${size}px ${DISPLAY_FONT}`;
     ctx.fillStyle = RED;
     ctx.fillText(line, w / 2 + w * 0.012, y + size * 0.1);
     ctx.lineWidth = Math.max(6, size * 0.17);
@@ -223,12 +233,12 @@ function drawFooter(ctx, tagline, loading, w, h) {
   ctx.fillStyle = BLACK;
   ctx.fillRect(0, y, w, stripH);
   ctx.fillStyle = WHITE;
-  ctx.font = `${Math.round(stripH * 0.42)}px Anton, sans-serif`;
+  ctx.font = `700 ${Math.round(stripH * 0.42)}px ${LABEL_FONT}`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   ctx.fillText((tagline || '').trim().toUpperCase(), w * 0.03, y + stripH / 2);
   const label = `LOADING ${loading}%`;
-  ctx.font = `${Math.round(stripH * 0.4)}px Anton, sans-serif`;
+  ctx.font = `700 ${Math.round(stripH * 0.4)}px ${LABEL_FONT}`;
   const labelW = ctx.measureText(label).width;
   const barW = w * 0.16;
   const barH = stripH * 0.42;

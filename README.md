@@ -11,8 +11,8 @@ caption lettering and a loading bar — exported as a PNG to share.
 ## How it works
 
 1. **Add photos** — pick up to three photos from your machine (slots A, B, C),
-   or use the built-in comic city samples. Photos are read locally and never
-   uploaded.
+   or use the built-in comic city samples, drawn live on canvas by the app.
+   Photos are read locally and never uploaded.
 2. **Pick a layout** — Duo Diagonal (hero + street), Triple Strip (three
    slashes) or Solo Hero (one big frame). Each panel takes any of your photos.
 3. **Crop & position** — drag the photo right on the preview, or use the zoom
@@ -24,10 +24,11 @@ caption lettering and a loading bar — exported as a PNG to share.
 ## Design
 
 "Loading-Screen Comic": flat yellow/red/black comic colours, halftone dots,
-diagonal gutters, Bangers display lettering with a black outline and red drop
-shadow, plus a loading bar in the footer strip. Everything is original — no
-Rockstar logo, artwork or font. Fonts are Anton and Bangers under the SIL Open
-Font License, shipped as files under `app/fonts/` with their licence texts.
+diagonal gutters, extra-bold system-font display lettering with a black outline
+and red drop shadow, plus a loading bar in the footer strip. Everything is
+original — no Rockstar logo, artwork or font. Lettering uses the machine's own
+heavy sans (Arial Black / Liberation Sans Bold) and the sample scenes are
+drawn at runtime on canvas, so the app ships no font or image files at all.
 
 ## Run it
 
@@ -48,10 +49,9 @@ mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 - `app/index.html` — editor page
 - `app/style.css` — comic editor styling
 - `app/src/cover.js` — the cover renderer (panels, halftone, lettering, footer)
+- `app/src/samples.js` — three comic city scenes drawn live on canvas
 - `app/src/main.js` — editor wiring, drag-to-pan, export
 - `app/src/shots.js` — fixed scenes for screenshots (`?shot=`)
-- `app/fonts/` — Anton + Bangers (OFL), with licence texts
-- `app/samples/` — three original comic city illustrations made for this entry
 - `screenshots/` — cover + editor screenshots
 - `main.ts` — hands `app/` and `screenshots/` in and writes `dossier.json`
 - `serve.ts` — tiny static server for local trying
