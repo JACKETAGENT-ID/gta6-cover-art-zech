@@ -3,88 +3,77 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Loading Screen — GTA 6 Cover Maker</title>
+<title>Loading-Screen Comic Cover Maker</title>
 <link rel="stylesheet" href="./style.css">
 </head>
 <body>
-<header class="masthead">
-  <p class="eyebrow">VICE CITY · FAN-MADE COVER STUDIO</p>
-  <h1>LOADING SCREEN</h1>
-  <p class="sub">Turn your photos into GTA-style poster covers — diagonal comic panels, halftone ink, one big caption. Export the PNG and post it.</p>
-</header>
+<main class="app">
+  <section class="controls">
+    <h1>Comic Cover Maker</h1>
+    <p class="tagline">Three photos, one loud caption — a GTA-style loading-screen cover, exported as a PNG.</p>
 
-<main class="workbench">
-  <section class="stage" aria-label="Live preview">
-    <div class="preview-frame">
-      <canvas id="preview" width="1080" height="1080"></canvas>
-    </div>
-    <p class="stage-note">Live preview — what you see is what the PNG holds.</p>
+    <fieldset class="slots">
+      <legend>Photos — click a slot to frame it</legend>
+      <div class="slot" data-slot="0">
+        <span class="slot-name">Photo 1</span>
+        <select class="scene-pick" aria-label="Sample scene for photo 1"></select>
+        <label class="upload-label">Upload <input class="upload" type="file" accept="image/*"></label>
+      </div>
+      <div class="slot" data-slot="1">
+        <span class="slot-name">Photo 2</span>
+        <select class="scene-pick" aria-label="Sample scene for photo 2"></select>
+        <label class="upload-label">Upload <input class="upload" type="file" accept="image/*"></label>
+      </div>
+      <div class="slot" data-slot="2">
+        <span class="slot-name">Photo 3</span>
+        <select class="scene-pick" aria-label="Sample scene for photo 3"></select>
+        <label class="upload-label">Upload <input class="upload" type="file" accept="image/*"></label>
+      </div>
+    </fieldset>
+
+    <label>Layout
+      <select id="layout">
+        <option value="triptych" selected>Triptych — diagonal panels</option>
+        <option value="stack">Stack — three bands</option>
+        <option value="hero">Hero — one big, two small</option>
+        <option value="zigzag">Zigzag — staggered panels</option>
+      </select>
+    </label>
+    <label>Grade
+      <select id="grade">
+        <option value="sunset" selected>Sunset — orange &amp; pink</option>
+        <option value="vice">Vice — teal &amp; magenta</option>
+        <option value="noir">Noir — dark &amp; gold</option>
+        <option value="gold">Gold — amber wash</option>
+      </select>
+    </label>
+    <label>Post size
+      <select id="size">
+        <option value="square" selected>Square 1080 × 1080</option>
+        <option value="portrait">Portrait 1080 × 1350</option>
+        <option value="wide">Wide 1920 × 1080</option>
+      </select>
+    </label>
+
+    <label>Kicker <input id="kicker" type="text" maxlength="30" value="Greetings from"></label>
+    <label>Title <input id="title" type="text" maxlength="28" value="Vice City"></label>
+    <label>Place line <input id="place" type="text" maxlength="30" value="Ocean Drive · 2026"></label>
+
+    <fieldset class="framing">
+      <legend>Frame the active photo</legend>
+      <label>Zoom <input id="zoom" type="range" min="1" max="2.2" step="0.05" value="1"></label>
+      <label>Pan sideways <input id="panx" type="range" min="-1" max="1" step="0.05" value="0"></label>
+      <label>Pan up / down <input id="pany" type="range" min="-1" max="1" step="0.05" value="0"></label>
+    </fieldset>
+
+    <button id="export" type="button">Export PNG</button>
+    <p id="status" role="status"></p>
+    <p class="fineprint">Photos stay on your machine — nothing is uploaded. The sample scenes are drawn live in your browser, and the lettering uses system fonts only.</p>
   </section>
-
-  <section class="panel" aria-label="Editor controls">
-    <h2>1 · Photos</h2>
-    <div class="slots">
-      <button type="button" class="slot-card active">
-        <span class="slot-thumb">Slot 1 · empty</span>
-        <span class="slot-name">Slot 1 — Empty</span>
-      </button>
-      <button type="button" class="slot-card">
-        <span class="slot-thumb">Slot 2 · empty</span>
-        <span class="slot-name">Slot 2 — Empty</span>
-      </button>
-      <button type="button" class="slot-card">
-        <span class="slot-thumb">Slot 3 · empty</span>
-        <span class="slot-name">Slot 3 — Empty</span>
-      </button>
-    </div>
-    <p class="hint">Pick a slot, then paint a built-in scene into it or upload your own photo.</p>
-    <div class="row" id="scene-picks" aria-label="Built-in scenes"></div>
-    <div class="row">
-      <button type="button" id="upload-btn" class="btn">Upload a photo</button>
-      <button type="button" id="fill-samples" class="btn ghost">Fill all three scenes</button>
-      <button type="button" id="clear-slots" class="btn ghost">Clear slots</button>
-    </div>
-    <input type="file" id="upload" accept="image/*" hidden>
-
-    <h2>2 · Frame the active photo</h2>
-    <label class="slider">Zoom
-      <input type="range" id="zoom" min="1" max="2.5" step="0.01" value="1">
-    </label>
-    <label class="slider">Pan sideways
-      <input type="range" id="pan-x" min="-1" max="1" step="0.01" value="0">
-    </label>
-    <label class="slider">Pan up / down
-      <input type="range" id="pan-y" min="-1" max="1" step="0.01" value="0">
-    </label>
-
-    <h2>3 · Caption</h2>
-    <label class="field">Kicker
-      <input type="text" id="kicker" value="VICE CITY" maxlength="40">
-    </label>
-    <label class="field">Title
-      <input type="text" id="title" value="Sunset Heist" maxlength="40">
-    </label>
-    <label class="field">Place line
-      <input type="text" id="place" value="Ocean Drive" maxlength="40">
-    </label>
-
-    <h2>4 · Look</h2>
-    <p class="pick-label">Panels</p>
-    <div class="row" id="layout-picks"></div>
-    <p class="pick-label">Grade</p>
-    <div class="row" id="grade-picks"></div>
-    <p class="pick-label">Post size</p>
-    <div class="row" id="size-picks"></div>
-
-    <button type="button" id="export" class="btn big">Export PNG</button>
-    <p class="hint">Exports at full size: 1080 × 1080, 1080 × 1350 or 1920 × 1080. Your photos never leave this machine.</p>
+  <section class="preview">
+    <canvas id="cover" width="1080" height="1080" aria-label="The cover preview"></canvas>
   </section>
 </main>
-
-<footer class="foot">
-  <p>Original fan-made art. No Rockstar Games logo, artwork or font is used. Lettering uses system fonts only; the three sample scenes are drawn live in your browser.</p>
-</footer>
-
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>

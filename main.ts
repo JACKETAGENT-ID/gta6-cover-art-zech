@@ -1,79 +1,36 @@
-// Hands this entry in: copies the app and its screenshots into the
-// output folder and writes the dossier the judge reads, using the
-// vendored make.fun library. Node 22, standard library only, no
-// network, no install step.
-//
-//   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
-//
-// Outside the grader MAKEFUN_OUTPUT_DIR stands in for /output. Run it
-// twice and the two outputs are byte for byte the same.
+// Hands this entry in (Node 22, standard library only): it stages a copy
+// of the app and its screenshots under the output folder, then writes the
+// dossier the judge reads, using the vendored make.fun library.
+// Run it outside the grader with MAKEFUN_OUTPUT_DIR standing in for
+// /output, e.g. `mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts`.
+// It runs twice in grading and must write identical bytes both times.
 
-import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-app.ts';
 
 const repoRoot = fileURLToPath(new URL('.', import.meta.url));
-const outDir = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
+const outputDir = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 
-// The gate's caps, repeated here so a bad build fails loudly instead
-// of shipping an entry the scorer would refuse.
-const CAPS = {
-  text_max_bytes: 163840,
-  screenshots: { max: 4, max_bytes: 262144 },
-  app_max_files: 993,
-  app_max_bytes: 50331648,
-  app_path_max_bytes: 1000,
-};
-
-function countTree(dir) {
-  let files = 0;
-  let bytes = 0;
-  for (const name of readdirSync(dir)) {
-    const p = join(dir, name);
-    const st = statSync(p);
-    if (st.isDirectory()) {
-      const sub = countTree(p);
-      files += sub.files;
-      bytes += sub.bytes;
-    } else {
-      files += 1;
-      bytes += st.size;
-    }
-  }
-  return { files, bytes };
-}
-
-function copyTree(src, dst) {
-  mkdirSync(dst, { recursive: true });
-  cpSync(src, dst, { recursive: true });
-}
-
-function fail(msg) {
-  throw new Error(`main.ts: ${msg}`);
-}
-
-// Start from a clean output folder so stale files can never leak in.
-rmSync(outDir, { recursive: true, force: true });
-mkdirSync(outDir, { recursive: true });
-
-const appDir = join(repoRoot, 'app');
-if (!existsSync(join(appDir, 'index.html'))) fail('app/index.html is missing');
-const appStats = countTree(appDir);
-if (appStats.files > CAPS.app_max_files) fail(`app/ holds ${appStats.files} files, over the 993 cap`);
-if (appStats.bytes > CAPS.app_max_bytes) fail(`app/ is ${appStats.bytes} bytes, over the 48 MiB cap`);
-copyTree(appDir, join(outDir, 'app'));
-
+mkdirSync(outputDir, { recursive: true });
+cpSync(join(repoRoot, 'app'), join(outputDir, 'app'), { recursive: true });
+mkdirSync(join(outputDir, 'screenshots'), { recursive: true });
 const shotsDir = join(repoRoot, 'screenshots');
-const shotNames = existsSync(shotsDir) ? readdirSync(shotsDir).filter((n) => !n.startsWith('.')) : [];
-if (shotNames.length < 3 || shotNames.length > CAPS.screenshots.max) {
-  fail(`screenshots/ holds ${shotNames.length} images, need 3 or 4`);
+if (existsSync(shotsDir)) {
+  cpSync(shotsDir, join(outputDir, 'screenshots'), { recursive: true });
 }
-for (const name of shotNames) {
-  if (statSync(join(shotsDir, name)).size > CAPS.screenshots.max_bytes) {
-    fail(`screenshots/${name} is over the 256 KiB cap`);
-  }
-}
-copyTree(shotsDir, join(outDir, 'screenshots'));
 
-writeFileSync(join(outDir, 'dossier.json'), buildDossier(outDir, CAPS));
+// The caps mirror the scorer's own limits: at most four screenshots of
+// 256 KiB each, an app/ of at most 993 files and 48 MiB, and a dossier
+// text of at most 160 KiB. Exceeding one refuses the entry outright.
+writeFileSync(
+  join(outputDir, 'dossier.json'),
+  buildDossier(outputDir, {
+    text_max_bytes: 163840,
+    screenshots: { max: 4, max_bytes: 262144 },
+    app_max_files: 993,
+    app_max_bytes: 50331648,
+    app_path_max_bytes: 1000,
+  }),
+);

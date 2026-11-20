@@ -1,213 +1,161 @@
-// The editor: wires the controls on index.html to the renderer. The
-// page holds one live preview canvas plus three photo slots. A slot
-// holds either a photo the user uploaded or one of the runtime-drawn
-// scenes; the preview redraws on every change, and Export paints the
-// same cover at full post size and downloads it as a PNG.
+// Wires the editor: three photo slots (upload your own photo or paint in
+// a built-in scene), layout, grade and size pickers, caption fields, zoom
+// and pan for the active photo, and PNG export. A `?shot=` query instead
+// stages a fixed scene for a screenshot (see ./shots.js).
+import { drawCoverArt, LAYOUTS, GRADES, SIZES } from './cover.js';
+import { makeScene, SCENE_NAMES, SCENE_LABELS } from './samples.js';
+import { runShot } from './shots.js';
 
-import { SCENES, sceneCanvas } from './samples.js';
-import { SIZES, LAYOUTS, GRADES, drawCover, coverSize } from './cover.js';
-import { readShotParams, renderCoverShot } from './shots.js';
+const canvas = document.getElementById('cover');
+const layoutPick = document.getElementById('layout');
+const gradePick = document.getElementById('grade');
+const sizePick = document.getElementById('size');
+const kickerInput = document.getElementById('kicker');
+const titleInput = document.getElementById('title');
+const placeInput = document.getElementById('place');
+const zoomInput = document.getElementById('zoom');
+const panXInput = document.getElementById('panx');
+const panYInput = document.getElementById('pany');
+const exportButton = document.getElementById('export');
+const statusLine = document.getElementById('status');
 
-const shot = readShotParams();
-// A cover shot takes over the whole page; the editor never starts.
-if (renderCoverShot(shot)) {
-  // Nothing else to do: the cover is already on screen.
-} else {
-
-const $ = (sel) => document.querySelector(sel);
-const $$ = (sel) => Array.from(document.querySelectorAll(sel));
-
-function blankSlot() {
-  return { image: null, zoom: 1, panX: 0, panY: 0, scene: null };
+const sceneCache = new Map();
+function sceneCanvas(name) {
+  if (!sceneCache.has(name)) sceneCache.set(name, makeScene(name));
+  return sceneCache.get(name);
 }
 
-const state = {
-  slots: [blankSlot(), blankSlot(), blankSlot()],
-  active: 0,
-  layout: 'stack',
-  grade: 'sunset',
-  size: 'square',
-  kicker: 'VICE CITY',
-  title: 'Sunset Heist',
-  place: 'Ocean Drive',
-};
+const slots = SCENE_NAMES.map((name) => ({ kind: 'scene', scene: name, img: sceneCanvas(name) }));
+const zooms = [1, 1, 1];
+const pans = [[0, 0], [0, 0], [0, 0]];
+let activeSlot = 0;
 
-function slotImage(slot) {
-  return slot.image;
+function currentPhotos() {
+  return slots.map((slot) => slot.img);
 }
 
-function refreshPreview() {
-  const canvas = $('#preview');
-  const box = canvas.parentElement.getBoundingClientRect();
-  const scale = Math.min(box.width / 1080, (box.height || 600) / 1080);
-  const pw = Math.max(320, Math.floor(1080 * Math.max(0.3, scale)));
-  const ph = Math.floor(pw * (state.size === 'portrait' ? 1350 / 1080 : state.size === 'wide' ? 1080 / 1920 : 1));
-  canvas.width = pw;
-  canvas.height = ph;
-  drawCover(canvas, {
-    photos: state.slots.map(slotImage),
-    layout: state.layout,
-    grade: state.grade,
-    kicker: state.kicker,
-    title: state.title,
-    place: state.place,
+function redraw() {
+  const size = SIZES[sizePick.value] ?? SIZES.square;
+  canvas.width = size.w;
+  canvas.height = size.h;
+  drawCoverArt(canvas, currentPhotos(), {
+    layout: layoutPick.value,
+    grade: gradePick.value,
+    kicker: kickerInput.value,
+    title: titleInput.value,
+    place: placeInput.value,
+    zooms: [...zooms],
+    pans: pans.map((p) => [...p]),
   });
-  syncSlotCards();
+  const active = document.querySelector('.slot.active');
+  if (active) active.classList.remove('active');
+  const next = document.querySelector(`.slot[data-slot="${activeSlot}"]`);
+  if (next) next.classList.add('active');
+  zoomInput.value = String(zooms[activeSlot]);
+  panXInput.value = String(pans[activeSlot][0]);
+  panYInput.value = String(pans[activeSlot][1]);
 }
 
-function syncSlotCards() {
-  $$('.slot-card').forEach((card, i) => {
-    const slot = state.slots[i];
-    const thumb = card.querySelector('.slot-thumb');
-    thumb.innerHTML = '';
-    if (slot.image) {
-      const c = document.createElement('canvas');
-      c.width = 200;
-      c.height = 150;
-      const tctx = c.getContext('2d');
-      const iw = slot.image.naturalWidth || slot.image.width;
-      const ih = slot.image.naturalHeight || slot.image.height;
-      const s = Math.max(200 / iw, 150 / ih);
-      tctx.drawImage(slot.image, (200 - iw * s) / 2, (150 - ih * s) / 2, iw * s, ih * s);
-      thumb.appendChild(c);
-    } else {
-      thumb.textContent = `Slot ${i + 1} · empty`;
-    }
-    card.classList.toggle('active', i === state.active);
-    const label = slot.scene ? SCENES.find((s) => s.id === slot.scene)?.label || 'Photo' : slot.image ? 'Photo' : 'Empty';
-    card.querySelector('.slot-name').textContent = `Slot ${i + 1} — ${label}`;
-  });
-  const slot = state.slots[state.active];
-  $('#zoom').value = slot.zoom;
-  $('#pan-x').value = slot.panX;
-  $('#pan-y').value = slot.panY;
-}
-
-function loadSceneInto(slotIndex, sceneId) {
-  const slot = state.slots[slotIndex];
-  slot.image = sceneCanvas(sceneId, 900, 675);
-  slot.scene = sceneId;
-  slot.zoom = 1;
-  slot.panX = 0;
-  slot.panY = 0;
-  refreshPreview();
-}
-
-function loadUpload(file) {
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => {
+/** Loads an image from a URL, resolving once it can be drawn. */
+export function loadImage(url) {
+  return new Promise((resolve, reject) => {
     const img = new Image();
-    img.onload = () => {
-      const slot = state.slots[state.active];
-      slot.image = img;
-      slot.scene = null;
-      slot.zoom = 1;
-      slot.panX = 0;
-      slot.panY = 0;
-      refreshPreview();
-    };
-    img.src = reader.result;
-  };
-  reader.readAsDataURL(file);
-}
-
-function exportPng() {
-  const { w, h } = coverSize(state.size);
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  drawCover(canvas, {
-    photos: state.slots.map(slotImage),
-    layout: state.layout,
-    grade: state.grade,
-    kicker: state.kicker,
-    title: state.title,
-    place: state.place,
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = url;
   });
-  canvas.toBlob((blob) => {
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `gta6-cover-${state.size}.png`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-  }, 'image/png');
 }
 
-function buildPickers() {
-  const mk = (el, items, current, onPick) => {
-    el.innerHTML = '';
-    for (const item of items) {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'pick' + (item.id === current ? ' on' : '');
-      b.textContent = item.label;
-      b.title = item.hint || item.label;
-      b.addEventListener('click', () => {
-        onPick(item.id);
-        el.querySelectorAll('.pick').forEach((p) => p.classList.remove('on'));
-        b.classList.add('on');
-      });
-      el.appendChild(b);
-    }
-  };
-  mk($('#layout-picks'), LAYOUTS, state.layout, (id) => { state.layout = id; refreshPreview(); });
-  mk($('#grade-picks'), GRADES, state.grade, (id) => { state.grade = id; refreshPreview(); });
-  mk($('#size-picks'), SIZES, state.size, (id) => { state.size = id; refreshPreview(); });
-  const scenes = $('#scene-picks');
-  scenes.innerHTML = '';
-  for (const scene of SCENES) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'pick';
-    b.textContent = scene.label;
-    b.title = scene.hint;
-    b.addEventListener('click', () => loadSceneInto(state.active, scene.id));
-    scenes.appendChild(b);
+function fillPick(select, names, labels) {
+  for (const name of names) {
+    const option = document.createElement('option');
+    option.value = name;
+    option.textContent = labels ? labels[name] : name;
+    select.appendChild(option);
   }
 }
 
-function wire() {
-  $$('.slot-card').forEach((card, i) => {
-    card.addEventListener('click', () => { state.active = i; refreshPreview(); });
+document.querySelectorAll('.slot').forEach((button) => {
+  const index = Number(button.dataset.slot);
+  button.addEventListener('click', () => {
+    activeSlot = index;
+    redraw();
   });
-  $('#upload').addEventListener('change', (e) => loadUpload(e.target.files[0]));
-  $('#upload-btn').addEventListener('click', () => $('#upload').click());
-  $('#zoom').addEventListener('input', (e) => { state.slots[state.active].zoom = Number(e.target.value); refreshPreview(); });
-  $('#pan-x').addEventListener('input', (e) => { state.slots[state.active].panX = Number(e.target.value); refreshPreview(); });
-  $('#pan-y').addEventListener('input', (e) => { state.slots[state.active].panY = Number(e.target.value); refreshPreview(); });
-  $('#kicker').addEventListener('input', (e) => { state.kicker = e.target.value; refreshPreview(); });
-  $('#title').addEventListener('input', (e) => { state.title = e.target.value; refreshPreview(); });
-  $('#place').addEventListener('input', (e) => { state.place = e.target.value; refreshPreview(); });
-  $('#export').addEventListener('click', exportPng);
-  $('#fill-samples').addEventListener('click', () => {
-    state.slots.forEach((_, i) => loadSceneInto(i, SCENES[i % SCENES.length].id));
+  const picker = button.querySelector('.scene-pick');
+  fillPick(picker, SCENE_NAMES, SCENE_LABELS);
+  picker.value = slots[index].scene;
+  picker.addEventListener('change', () => {
+    slots[index] = { kind: 'scene', scene: picker.value, img: sceneCanvas(picker.value) };
+    activeSlot = index;
+    redraw();
   });
-  $('#clear-slots').addEventListener('click', () => {
-    state.slots = [blankSlot(), blankSlot(), blankSlot()];
-    refreshPreview();
+  const upload = button.querySelector('.upload');
+  upload.addEventListener('change', async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    slots[index] = { kind: 'upload', scene: null, img: await loadImage(URL.createObjectURL(file)) };
+    activeSlot = index;
+    statusLine.textContent = `Photo ${index + 1} loaded: ${file.name}`;
+    redraw();
   });
-  window.addEventListener('resize', refreshPreview);
+});
+
+layoutPick.addEventListener('change', redraw);
+gradePick.addEventListener('change', redraw);
+sizePick.addEventListener('change', redraw);
+kickerInput.addEventListener('input', redraw);
+titleInput.addEventListener('input', redraw);
+placeInput.addEventListener('input', redraw);
+zoomInput.addEventListener('input', () => {
+  zooms[activeSlot] = Number(zoomInput.value);
+  redraw();
+});
+panXInput.addEventListener('input', () => {
+  pans[activeSlot][0] = Number(panXInput.value);
+  redraw();
+});
+panYInput.addEventListener('input', () => {
+  pans[activeSlot][1] = Number(panYInput.value);
+  redraw();
+});
+
+exportButton.addEventListener('click', () => {
+  const size = SIZES[sizePick.value] ?? SIZES.square;
+  canvas.toBlob((blob) => {
+    if (!blob) return;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `cover-${size.w}x${size.h}.png`;
+    a.click();
+    statusLine.textContent = `Saved cover-${size.w}x${size.h}.png`;
+  }, 'image/png');
+});
+
+/** Applies a shot's options (from ?shot=) onto the editor state. */
+export function applyShotOptions(opts) {
+  if (opts.layout && LAYOUTS.includes(opts.layout)) layoutPick.value = opts.layout;
+  if (opts.grade && GRADES.includes(opts.grade)) gradePick.value = opts.grade;
+  if (opts.size && SIZES[opts.size]) sizePick.value = opts.size;
+  if (opts.kicker !== undefined) kickerInput.value = opts.kicker;
+  if (opts.title !== undefined) titleInput.value = opts.title;
+  if (opts.place !== undefined) placeInput.value = opts.place;
+  if (Array.isArray(opts.scenes)) {
+    opts.scenes.forEach((name, i) => {
+      if (SCENE_NAMES.includes(name)) {
+        slots[i] = { kind: 'scene', scene: name, img: sceneCanvas(name) };
+        const picker = document.querySelector(`.slot[data-slot="${i}"] .scene-pick`);
+        if (picker) picker.value = name;
+      }
+    });
+  }
+  if (typeof opts.zoom === 'number') zooms[0] = zooms[1] = zooms[2] = opts.zoom;
+  redraw();
 }
 
-// An editor shot opens pre-filled from its query, so the screenshot
-// shows the caption and grade the maker asked for.
-if (shot.shot === 'editor') {
-  if (shot.caption) state.title = shot.caption;
-  if (shot.kicker) state.kicker = shot.kicker;
-  if (shot.place) state.place = shot.place;
-  if (shot.layout) state.layout = shot.layout;
-  if (shot.grade) state.grade = shot.grade;
-  if (shot.size) state.size = shot.size;
-  const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
-  setVal('kicker', state.kicker);
-  setVal('title', state.title);
-  setVal('place', state.place);
-}
-buildPickers();
-wire();
-// Start with one scene in every slot so the first paint already shows
-// the comic look; the user can replace any slot with their own photo.
-state.slots.forEach((_, i) => loadSceneInto(i, SCENES[i % SCENES.length].id));
-refreshPreview();
+const query = new URLSearchParams(location.search);
+const shot = query.get('shot');
+if (shot) {
+  runShot(shot, query, applyShotOptions);
+} else {
+  redraw();
 }

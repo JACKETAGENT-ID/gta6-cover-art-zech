@@ -1,78 +1,104 @@
-#!/usr/bin/env python3
-"""Take the entry's screenshots with headless Chromium.
+"""Takes the entry's screenshots: serves app/ locally, opens each scene
+from shots.json in headless Chromium, waits until the app reports itself
+ready, and saves a JPEG into screenshots/.
 
-Reads shots.json next to the repository root, serves app/ with the
-kit's own serve.ts, opens each ?shot= scene at its viewport size and
-writes the screenshot into screenshots/. Nothing is committed by this
-script except the four JPEGs it writes there; the script itself lives
-in tools/ as documentation of how the shots were made.
+Usage (from the repository root):
+    python3 tools/take_shots.py [--port 8903] [--quality 82]
 
-Usage: python3 tools/take_shots.py [--port 8091]
+Each shot is checked against the bounty limits (long side at most 1280,
+short side at least 480, at most 256 KiB) and the script exits non-zero
+if one breaks them. Nothing is written anywhere except screenshots/.
 """
+
 import argparse
 import json
 import os
 import subprocess
 import sys
 import time
+import urllib.request
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SHOTS = os.path.join(ROOT, "shots.json")
-OUTDIR = os.path.join(ROOT, "screenshots")
-
-
-def serve(port):
-    proc = subprocess.Popen(
-        ["node", "serve.ts", "--port", str(port)],
-        cwd=ROOT,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    return proc
+HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SHOTS_FILE = os.path.join(HERE, "shots.json")
+SHOTS_DIR = os.path.join(HERE, "screenshots")
 
 
-def shoot(port):
-    from playwright.sync_api import sync_playwright
+def wait_for_server(url, timeout=30):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=2) as response:
+                if response.status == 200:
+                    return True
+        except Exception:
+            time.sleep(0.5)
+    return False
 
-    with open(SHOTS, encoding="utf-8") as fh:
-        scenes = json.load(fh)
-    os.makedirs(OUTDIR, exist_ok=True)
-    with sync_playwright() as pw:
-        browser = pw.chromium.launch()
-        for scene in scenes:
-            page = browser.new_page(viewport={"width": scene["w"], "height": scene["h"]})
-            errors = []
-            page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
-            page.on("pageerror", lambda e: errors.append(str(e)))
-            page.goto(f"http://127.0.0.1:{port}/{scene['query']}", wait_until="networkidle")
-            page.wait_for_timeout(900)
-            target = os.path.join(OUTDIR, scene["name"])
-            page.screenshot(path=target, type="jpeg", quality=88)
-            size = os.path.getsize(target)
-            print(f"{scene['name']}: {scene['w']}x{scene['h']} {size} bytes"
-                  + (f"  CONSOLE ERRORS: {errors}" if errors else ""))
-            page.close()
-        browser.close()
+
+def check_shot(path, width, height):
+    problems = []
+    size = os.path.getsize(path)
+    if size > 262144:
+        problems.append(f"over 256 KiB ({size} bytes)")
+    if max(width, height) > 1280:
+        problems.append(f"long side {max(width, height)} over 1280")
+    if min(width, height) < 480:
+        problems.append(f"short side {min(width, height)} under 480")
+    return problems
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--port", type=int, default=8091)
-    args = ap.parse_args()
-    server = serve(args.port)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--port", type=int, default=8903)
+    parser.add_argument("--quality", type=int, default=82)
+    args = parser.parse_args()
+
+    with open(SHOTS_FILE, encoding="utf-8") as handle:
+        shots = json.load(handle)
+    os.makedirs(SHOTS_DIR, exist_ok=True)
+
+    server = subprocess.Popen(
+        ["node", "serve.ts", "--port", str(args.port)],
+        cwd=HERE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
     try:
-        for _ in range(30):
+        base = f"http://127.0.0.1:{args.port}"
+        if not wait_for_server(base + "/index.html"):
+            print("server did not come up", file=sys.stderr)
+            return 1
+
+        from playwright.sync_api import sync_playwright
+
+        failures = []
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch()
             try:
-                import urllib.request
-                urllib.request.urlopen(f"http://127.0.0.1:{args.port}/", timeout=1)
-                break
-            except Exception:
-                time.sleep(0.2)
-        shoot(args.port)
+                for shot in shots:
+                    page = browser.new_page(viewport={"width": shot["w"], "height": shot["h"]})
+                    page.goto(base + "/index.html" + shot["query"])
+                    try:
+                        page.wait_for_function("window.__shotReady === true", timeout=15000)
+                    except Exception:
+                        print(f"{shot['name']}: app never reported ready", file=sys.stderr)
+                        failures.append(shot["name"])
+                    page.wait_for_timeout(400)
+                    out = os.path.join(SHOTS_DIR, shot["name"])
+                    page.screenshot(path=out, type="jpeg", quality=args.quality)
+                    page.close()
+                    problems = check_shot(out, shot["w"], shot["h"])
+                    size = os.path.getsize(out)
+                    print(f"{shot['name']}: {shot['w']}x{shot['h']} {size} bytes"
+                          + (f"  PROBLEM: {'; '.join(problems)}" if problems else ""))
+                    failures.extend(f"{shot['name']}: {p}" for p in problems)
+            finally:
+                browser.close()
+        return 1 if failures else 0
     finally:
         server.terminate()
-        server.wait(timeout=5)
+        server.wait(timeout=10)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())
